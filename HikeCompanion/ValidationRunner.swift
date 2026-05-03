@@ -1,8 +1,9 @@
 // ValidationRunner.swift
 // Wraps mlalma/kokoro-ios (KokoroSwift / MLX). Loads model + voices from
-// the app bundle, exposes one `synthesize(text:)` call that times wall
-// clock vs audio duration, plays the resulting audio, and saves a WAV
-// to Documents/.
+// the app bundle, exposes one `synthesize(text:speed:)` call that times
+// wall clock vs audio duration, plays the resulting audio, and saves a
+// WAV to Documents/. Surfaces a live caption (currently-spoken word)
+// using the per-token timestamps Kokoro returns.
 
 import AVFoundation
 import Foundation
@@ -21,6 +22,8 @@ final class ValidationRunner: ObservableObject {
     @Published private(set) var lastWavURL: URL?
     @Published private(set) var isReady: Bool = false
     @Published private(set) var isRunning: Bool = false
+    /// Words spoken so far during current playback. Updates ~every 50 ms via Timer.
+    @Published private(set) var currentCaption: String = ""
 
     // MARK: - Internals
 
@@ -28,6 +31,11 @@ final class ValidationRunner: ObservableObject {
     private var voices: [String: MLXArray] = [:]
     private var audioEngine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
+
+    // Caption timing
+    private var captionTokens: [CaptionToken] = []
+    private var captionTimer: Timer?
+    private var captionStartTime: Date?
 
     private let workQueue = DispatchQueue(label: "com.lijuncheng16.HikeCompanion.runner",
                                           qos: .userInitiated)
@@ -73,14 +81,11 @@ final class ValidationRunner: ObservableObject {
         let loadedVoices = NpyzReader.read(fileFromPath: voicesURL) ?? [:]
         self.voices = loadedVoices
 
-        // Voice keys in voices.npz look like "af_bella.npy". Strip the suffix
-        // for display, sort alphabetically.
         let names = loadedVoices.keys
             .map { String($0.split(separator: ".")[0]) }
             .sorted()
         DispatchQueue.main.async {
             self.voiceNames = names
-            // Default to af_bella if present, else first.
             self.selectedVoice = names.first(where: { $0 == "af_bella" }) ?? names.first ?? ""
         }
 
@@ -96,13 +101,13 @@ final class ValidationRunner: ObservableObject {
             try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
         } catch {
-            // Non-fatal; playback may still work.
+            // Non-fatal.
         }
     }
 
     // MARK: - Synthesize
 
-    func synthesize(text: String) {
+    func synthesize(text: String, speed: Float = 1.0) {
         guard isReady, !isRunning, let tts = tts else { return }
         let voiceKey = selectedVoice
         guard let voiceArray = voices["\(voiceKey).npy"] else {
@@ -115,41 +120,63 @@ final class ValidationRunner: ObservableObject {
         DispatchQueue.main.async {
             self.isRunning = true
             self.status = "Synthesising…"
+            self.currentCaption = ""
+            self.stopCaptionTimer()
         }
 
         workQueue.async { [weak self] in
             guard let self else { return }
             do {
-                // Voice name convention: prefix 'a' = US English, else GB.
                 let language: Language = (voiceKey.first == "a") ? .enUS : .enGB
-
-                // Kokoro caps input at ~510 tokens after phonemization. Long
-                // text → exceed limit → MLX assertion / OOM crash. Chunk by
-                // sentence and concatenate audio. Cheap and robust.
                 let chunks = Self.splitForSynthesis(text)
 
                 var combined: [Float] = []
+                var allCaptionTokens: [CaptionToken] = []
+                var chunkOffsetSec: Double = 0
+                let sampleRate = Double(KokoroTTS.Constants.samplingRate)
+
                 let wallStart = Date().timeIntervalSince1970
 
                 for (i, chunk) in chunks.enumerated() {
                     DispatchQueue.main.async {
                         self.status = "Synthesising chunk \(i+1)/\(chunks.count)…"
                     }
-                    let (audio, _) = try tts.generateAudio(
+
+                    let (audio, mtokens) = try tts.generateAudio(
                         voice: voiceArray,
                         language: language,
-                        text: chunk
+                        text: chunk,
+                        speed: speed
                     )
+
+                    // Convert per-chunk MTokens to global-time CaptionTokens
+                    if let toks = mtokens {
+                        for t in toks {
+                            guard let s = t.start_ts, let e = t.end_ts else { continue }
+                            allCaptionTokens.append(CaptionToken(
+                                text: t.text,
+                                whitespace: t.whitespace,
+                                startTs: chunkOffsetSec + s,
+                                endTs: chunkOffsetSec + e
+                            ))
+                        }
+                    }
+
+                    let chunkAudioDur = Double(audio.count) / sampleRate
                     combined.append(contentsOf: audio)
-                    // Brief silence between chunks (50 ms) to avoid clicks
+
+                    // 50 ms silence between chunks (already used for click suppression);
+                    // also bump the offset so subsequent token timestamps stay correct.
                     if i < chunks.count - 1 {
-                        let silenceFrames = Int(Double(KokoroTTS.Constants.samplingRate) * 0.05)
+                        let silenceFrames = Int(sampleRate * 0.05)
                         combined.append(contentsOf: [Float](repeating: 0, count: silenceFrames))
+                        chunkOffsetSec += chunkAudioDur + 0.05
+                    } else {
+                        chunkOffsetSec += chunkAudioDur
                     }
                 }
 
                 let wallTime = Date().timeIntervalSince1970 - wallStart
-                let sampleRate = Double(KokoroTTS.Constants.samplingRate)
                 let audioDur = Double(combined.count) / sampleRate
                 let rtf = audioDur > 0 ? (wallTime / audioDur) : 0
 
@@ -158,10 +185,12 @@ final class ValidationRunner: ObservableObject {
                 let result = RunResult(
                     text: text,
                     voice: voiceKey,
+                    speed: speed,
                     wallTimeSec: wallTime,
                     audioDurationSec: audioDur,
                     rtf: rtf,
-                    wavURL: wavURL
+                    wavURL: wavURL,
+                    chunkCount: chunks.count
                 )
 
                 DispatchQueue.main.async {
@@ -175,6 +204,7 @@ final class ValidationRunner: ObservableObject {
                     self.isRunning = false
                 }
 
+                self.captionTokens = allCaptionTokens
                 self.play(audio: combined, sampleRate: sampleRate)
             } catch {
                 DispatchQueue.main.async {
@@ -185,11 +215,91 @@ final class ValidationRunner: ObservableObject {
         }
     }
 
-    /// Split input text into chunks Kokoro can handle without exceeding the
-    /// ~510-token model limit. Heuristic, not perfect: split on sentence
-    /// terminators (. ! ?), then if any chunk is still too long, sub-split
-    /// on commas. Empirically a chunk under ~250 graphemes is safe; misaki
-    /// ratio is roughly 1.5–2 tokens per word.
+    // MARK: - Playback + caption timer
+
+    private func play(audio: [Float], sampleRate: Double) {
+        guard let engine = audioEngine, let player = playerNode else { return }
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate,
+                                         channels: 1) else { return }
+        guard let buf = AVAudioPCMBuffer(pcmFormat: format,
+                                         frameCapacity: AVAudioFrameCount(audio.count)) else { return }
+        buf.frameLength = buf.frameCapacity
+        let dst = buf.floatChannelData![0]
+        audio.withUnsafeBufferPointer { src in
+            guard let base = src.baseAddress else { return }
+            dst.update(from: base, count: src.count)
+        }
+        engine.connect(player, to: engine.mainMixerNode, format: format)
+        do {
+            if !engine.isRunning { try engine.start() }
+        } catch { return }
+        player.scheduleBuffer(buf, at: nil, options: .interrupts, completionHandler: nil)
+        if !player.isPlaying { player.play() }
+
+        // Kick off caption sync on main run loop.
+        DispatchQueue.main.async { [weak self] in
+            self?.startCaptionTimer()
+        }
+    }
+
+    func playLastAgain() {
+        guard let url = lastWavURL else { return }
+        do {
+            let file = try AVAudioFile(forReading: url)
+            guard let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
+                                             frameCapacity: AVAudioFrameCount(file.length)) else { return }
+            try file.read(into: buf)
+            guard let engine = audioEngine, let player = playerNode else { return }
+            engine.connect(player, to: engine.mainMixerNode, format: file.processingFormat)
+            if !engine.isRunning { try engine.start() }
+            player.scheduleBuffer(buf, at: nil, options: .interrupts, completionHandler: nil)
+            if !player.isPlaying { player.play() }
+            startCaptionTimer()
+        } catch {
+            // ignore
+        }
+    }
+
+    /// Walks captionTokens in order, advancing as audioTime crosses each
+    /// token's start_ts. Updates currentCaption on the main run loop.
+    private func startCaptionTimer() {
+        stopCaptionTimer()
+        guard !captionTokens.isEmpty else { return }
+        currentCaption = ""
+        captionStartTime = Date()
+        var nextIndex = 0
+
+        captionTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] timer in
+            guard let self, let start = self.captionStartTime else {
+                timer.invalidate(); return
+            }
+            let elapsed = Date().timeIntervalSince(start)
+
+            // Append every token whose start has been reached.
+            while nextIndex < self.captionTokens.count,
+                  self.captionTokens[nextIndex].startTs <= elapsed {
+                let t = self.captionTokens[nextIndex]
+                let sep = t.whitespace.isEmpty ? "" : t.whitespace
+                self.currentCaption += t.text + sep
+                nextIndex += 1
+            }
+
+            // Done when we've passed the last token's end + a small grace period.
+            if let last = self.captionTokens.last, elapsed > last.endTs + 0.5 {
+                timer.invalidate()
+                self.captionTimer = nil
+            }
+        }
+    }
+
+    private func stopCaptionTimer() {
+        captionTimer?.invalidate()
+        captionTimer = nil
+        captionStartTime = nil
+    }
+
+    // MARK: - Text chunking (avoid 510-token cap)
+
     private static func splitForSynthesis(_ text: String) -> [String] {
         let primary = splitOnDelimiters(text, delimiters: [".", "!", "?"])
         var safe: [String] = []
@@ -198,12 +308,10 @@ final class ValidationRunner: ObservableObject {
             if s.count <= maxChars {
                 safe.append(s)
             } else {
-                // Long sentence — try comma splits
                 let secondary = splitOnDelimiters(s, delimiters: [",", ";"])
                 if secondary.allSatisfy({ $0.count <= maxChars }) {
                     safe.append(contentsOf: secondary)
                 } else {
-                    // Last resort: hard chop by char count at word boundaries
                     safe.append(contentsOf: hardChop(s, maxChars: maxChars))
                 }
             }
@@ -245,56 +353,25 @@ final class ValidationRunner: ObservableObject {
         return out
     }
 
-    // MARK: - Playback
-
-    private func play(audio: [Float], sampleRate: Double) {
-        guard let engine = audioEngine, let player = playerNode else { return }
-        guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate,
-                                         channels: 1) else { return }
-        guard let buf = AVAudioPCMBuffer(pcmFormat: format,
-                                         frameCapacity: AVAudioFrameCount(audio.count)) else { return }
-        buf.frameLength = buf.frameCapacity
-        let dst = buf.floatChannelData![0]
-        audio.withUnsafeBufferPointer { src in
-            guard let base = src.baseAddress else { return }
-            dst.update(from: base, count: src.count)
-        }
-        engine.connect(player, to: engine.mainMixerNode, format: format)
-        do {
-            if !engine.isRunning { try engine.start() }
-        } catch { return }
-        player.scheduleBuffer(buf, at: nil, options: .interrupts, completionHandler: nil)
-        if !player.isPlaying { player.play() }
-    }
-
-    func playLastAgain() {
-        guard let url = lastWavURL else { return }
-        // Re-decode and play
-        do {
-            let file = try AVAudioFile(forReading: url)
-            guard let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
-                                             frameCapacity: AVAudioFrameCount(file.length)) else { return }
-            try file.read(into: buf)
-            guard let engine = audioEngine, let player = playerNode else { return }
-            engine.connect(player, to: engine.mainMixerNode, format: file.processingFormat)
-            if !engine.isRunning { try engine.start() }
-            player.scheduleBuffer(buf, at: nil, options: .interrupts, completionHandler: nil)
-            if !player.isPlaying { player.play() }
-        } catch {
-            // ignore
-        }
-    }
-
     // MARK: - WAV save
 
     private static func saveWav(audio: [Float], sampleRate: Double) throws -> URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let ts = Int(Date().timeIntervalSince1970)
         let url = docs.appendingPathComponent("hike_\(ts).wav")
-        // Use the package's built-in WAV writer rather than re-implementing.
         try AudioUtils.writeWavFile(samples: audio, sampleRate: sampleRate, fileURL: url)
         return url
     }
+}
+
+// MARK: - Caption token (chunk-offsets pre-applied)
+
+private struct CaptionToken {
+    let text: String
+    let whitespace: String
+    /// Seconds from start of full concatenated audio.
+    let startTs: Double
+    let endTs: Double
 }
 
 // MARK: - Result type
@@ -303,11 +380,13 @@ struct RunResult: Identifiable {
     let id = UUID()
     let text: String
     let voice: String
+    let speed: Float
     let wallTimeSec: Double
     let audioDurationSec: Double
     /// wallTime / audioDuration; lower is better (< 1.0 = faster than realtime).
     let rtf: Double
     let wavURL: URL
+    let chunkCount: Int
 }
 
 // MARK: - Errors

@@ -1,6 +1,7 @@
 // ContentView.swift
-// Validator UI for mlalma/kokoro-ios. One text field, voice picker, run
-// button, results readout, replay + share.
+// Validator UI for mlalma/kokoro-ios. Text input, voice picker, speed
+// slider, run button, results readout, live caption during playback,
+// replay + share.
 
 import SwiftUI
 import UIKit
@@ -8,6 +9,7 @@ import UIKit
 struct ContentView: View {
     @StateObject private var runner = ValidationRunner()
     @State private var inputText: String = "The morning mist rose from the valley as we climbed the ridge."
+    @State private var speed: Double = 1.0
     @State private var showShareSheet = false
     @State private var shareItems: [Any] = []
 
@@ -31,11 +33,18 @@ struct ContentView: View {
                         }
                     }
                     .disabled(runner.voiceNames.isEmpty)
+                    HStack {
+                        Text("Speed")
+                        Slider(value: $speed, in: 0.5...2.0, step: 0.05)
+                        Text(String(format: "%.2f×", speed))
+                            .font(.callout.monospaced())
+                            .frame(width: 60, alignment: .trailing)
+                    }
                 }
 
                 Section {
                     Button {
-                        runner.synthesize(text: inputText)
+                        runner.synthesize(text: inputText, speed: Float(speed))
                     } label: {
                         HStack {
                             if runner.isRunning {
@@ -50,17 +59,30 @@ struct ContentView: View {
                     .disabled(!runner.isReady || runner.isRunning || inputText.isEmpty)
                 }
 
+                if !runner.currentCaption.isEmpty {
+                    Section("Spoken so far") {
+                        Text(runner.currentCaption)
+                            .font(.body)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .animation(.easeInOut(duration: 0.05), value: runner.currentCaption)
+                    }
+                }
+
                 if let r = runner.lastResult {
                     Section("Last run") {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("\(r.voice) · \(r.text)")
-                                .font(.subheadline)
+                            Text("\(r.voice)  ·  \(String(format: "%.2f×", r.speed))")
+                                .font(.subheadline.weight(.semibold))
+                            Text(r.text)
+                                .font(.callout)
                                 .lineLimit(3)
+                                .foregroundStyle(.secondary)
                             Text(String(format: "RTF %.3f   (%.1f× realtime)",
                                         r.rtf, r.rtf > 0 ? 1.0 / r.rtf : 0))
                                 .font(.callout.monospaced())
-                            Text(String(format: "wall %.2f s   audio %.2f s",
-                                        r.wallTimeSec, r.audioDurationSec))
+                            Text(String(format: "wall %.2f s   audio %.2f s   chunks %d",
+                                        r.wallTimeSec, r.audioDurationSec, r.chunkCount))
                                 .font(.caption.monospaced())
                                 .foregroundStyle(.secondary)
                         }
