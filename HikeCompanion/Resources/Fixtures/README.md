@@ -13,7 +13,7 @@ That script invokes the upstream `prepare_swift_bench_inputs.py` which writes:
 - `7s.json` — short paragraph
 - `15s.json` — medium paragraph
 - `30s.json` — long paragraph
-- `hnsf_config.json` — learned linear weights for the hn-nsf source module
+- `hnsf_weights.json` — learned linear weights for the hn-nsf source module
 
 Each input JSON has the shape (matches `BenchTypes.swift::BenchInput`):
 

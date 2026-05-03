@@ -144,8 +144,8 @@ final class ValidationRunner: ObservableObject {
 
     private static func loadHnsfWeights() throws -> HnsfWeights {
         let candidates: [URL?] = [
-            Bundle.main.url(forResource: "hnsf_config", withExtension: "json"),
-            Bundle.main.url(forResource: "hnsf_config", withExtension: "json", subdirectory: "Fixtures"),
+            Bundle.main.url(forResource: "hnsf_weights", withExtension: "json"),
+            Bundle.main.url(forResource: "hnsf_weights", withExtension: "json", subdirectory: "Fixtures"),
         ]
         guard let url = candidates.compactMap({ $0 }).first else {
             throw RunnerError.hnsfMissing
@@ -207,7 +207,7 @@ enum RunnerError: LocalizedError {
         case .fixtureMissing(let key):
             return "Fixture \(key).json not in app bundle. Run scripts/prepare-fixtures.sh and rebuild."
         case .hnsfMissing:
-            return "hnsf_config.json not in app bundle. Run scripts/prepare-fixtures.sh and rebuild."
+            return "hnsf_weights.json not in app bundle. Run scripts/prepare-fixtures.sh and rebuild."
         }
     }
 }

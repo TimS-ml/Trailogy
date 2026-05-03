@@ -22,7 +22,7 @@ So the validation flow is:
 [Mac, one-time]
   prepare-fixtures.sh
     └─ runs upstream prepare_swift_bench_inputs.py
-       └─ writes JSON fixtures (3s.json, 7s.json, 15s.json, 30s.json, hnsf_config.json)
+       └─ writes JSON fixtures (3s.json, 7s.json, 15s.json, 30s.json, hnsf_weights.json)
           to HikeCompanion/Resources/Fixtures/
 fetch-models.sh
   └─ downloads .mlpackage files from Hugging Face
