@@ -25,7 +25,12 @@ final class GemmaService: ObservableObject {
 
     // MARK: - Internals
 
-    private var session: ChatSession?
+    /// We hold the loaded model container for reuse across turns, but
+    /// create a *fresh* `ChatSession` per question so KV cache doesn't
+    /// accumulate. Multi-turn coherence is sacrificed in exchange for
+    /// bounded resident memory — important on iPhone where Gemma + Kokoro
+    /// already eat ~4 GB resident.
+    private var modelContainer: ModelContainer?
 
     private let systemInstructions = """
     You are a friendly outdoor companion who helps hikers understand what they \
@@ -60,14 +65,9 @@ final class GemmaService: ObservableObject {
 
         status = "Loading Gemma 4 (10–30 s)…"
         do {
-            let container = try await loadModelContainer(
+            modelContainer = try await loadModelContainer(
                 from: modelDir,
                 using: #huggingFaceTokenizerLoader()
-            )
-            session = ChatSession(
-                container,
-                instructions: systemInstructions,
-                generateParameters: GenerateParameters(temperature: 0.7)
             )
             isReady = true
             status = "Gemma 4 ready"
@@ -78,14 +78,16 @@ final class GemmaService: ObservableObject {
 
     // MARK: - Inference
 
-    /// Stream Gemma's response token-by-token. Returns nil if session not ready.
+    /// Stream Gemma's response token-by-token. Returns nil if model not ready.
+    /// Builds a *fresh* `ChatSession` per call so KV cache state doesn't
+    /// accumulate across questions.
     func streamResponse(to prompt: String) -> AsyncThrowingStream<String, Error>? {
-        session?.streamResponse(to: prompt)
-    }
-
-    /// Block until full response is generated. Returns nil if session not ready.
-    func respond(to prompt: String) async throws -> String? {
-        guard let session else { return nil }
-        return try await session.respond(to: prompt)
+        guard let container = modelContainer else { return nil }
+        let session = ChatSession(
+            container,
+            instructions: systemInstructions,
+            generateParameters: GenerateParameters(temperature: 0.7)
+        )
+        return session.streamResponse(to: prompt)
     }
 }
