@@ -9,13 +9,17 @@ import SwiftUI
 struct HikeCompanionApp: App {
 
     init() {
-        // 100 MB cache (working scratch space for MLX kernels)
+        // No explicit Memory.memoryLimit cap with Gemma + Kokoro coexisting.
+        // Reasoning: a hard ceiling forces MLX to allocate at the critical
+        // path during inference, which can spike resident memory at exactly
+        // the wrong moment (e.g. when Kokoro starts after Gemma finishes)
+        // and trip iOS jetsam. Letting MLX size its own working set tends
+        // to be steadier in practice — it grows the arena early and reuses
+        // it. We can re-introduce a cap if we see runaway growth.
+        //
+        // Cache limit kept small — this is just kernel scratch space, not
+        // tensor storage.
         Memory.cacheLimit = 100 * 1024 * 1024
-        // 4.5 GB hard ceiling on MLX GPU allocations.
-        // Kokoro working set ~700 MB + Gemma 4 E2B INT4 ~3.5 GB ≈ 4.2 GB.
-        // iPhone 15/16/17 Pro (8 GB RAM) leaves ~5 GB for app processes
-        // before iOS jetsams; this gives us headroom.
-        Memory.memoryLimit = 4_500 * 1024 * 1024
     }
 
     var body: some Scene {
