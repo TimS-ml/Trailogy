@@ -192,13 +192,18 @@ struct ContentView: View {
                 }
                 markMemoryEvent("Ask: after generation")
 
-                // 3. Keep Gemma resident across turns so conversation history
-                //    actually feels conversational (no 10–30 s reload between
-                //    follow-ups). Drop MLX's transient cache buffers though —
-                //    those would pile up and were the cause of the original
-                //    Gemma → Kokoro OOM. The model weights stay.
-                MLX.Memory.clearCache()
-                markMemoryEvent("Ask: after cache clear")
+                // 3. UNLOAD Gemma before Kokoro starts. Keeping it resident
+                //    across turns OOM'd the device — even on iPhone 17 Pro,
+                //    the combined Gemma weights + KV cache + Kokoro working
+                //    set crossed the iOS jetsam line.
+                //
+                //    Conversation history lives in GemmaService and survives
+                //    unload — it's replayed into a fresh ChatSession on the
+                //    next Ask. Trade-off: each follow-up Ask pays the 10–30 s
+                //    reload again. Multi-turn coherence preserved; memory
+                //    bounded.
+                gemma.unload()
+                markMemoryEvent("Ask: after Gemma unload")
 
                 // 4. Speak the response.
                 if !fullText.isEmpty {

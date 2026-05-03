@@ -4,19 +4,18 @@
 //
 // LIFECYCLE:
 //   • Lazy load on first Ask. App launches with only Kokoro resident.
-//   • Stays loaded across Asks (faster turns — no 10–30 s reload).
-//   • Conversation history is persisted in this service and replayed
-//     into a fresh ChatSession every turn so Gemma can resolve "they",
-//     "that", "do you remember" across multi-turn dialogue.
-//   • Caller can `reset()` to wipe history without unloading the model.
-//   • Caller can `unload()` to free the ~3 GB if they want memory back
-//     (we don't auto-unload anymore).
+//   • Unloaded after each generation completes (caller's responsibility
+//     to call `unload()`) — keeping Gemma resident while Kokoro does
+//     TTS crashed the app even on iPhone 17 Pro.
+//   • Conversation history is persisted in this service across
+//     unload/reload cycles, so it survives the per-turn drop. On the
+//     next Ask, the full history is replayed into a fresh ChatSession
+//     so Gemma can resolve "they", "that", etc. across turns.
+//   • `reset()` wipes history without unloading.
 //
-// MEMORY (iPhone 17 Pro):
-//   • Always-resident: ~3 GB Gemma weights (after first load).
-//   • Peak during generation: +KV cache, scales with history length.
-//   • Peak during Kokoro TTS post-generation: ~4 GB total. Still well
-//     under the ~5 GB jetsam line.
+// COST:
+//   • Each Ask after the first pays a 10–30 s reload again. Multi-turn
+//     coherence preserved; memory bounded between turns.
 //
 // HISTORY (uncapped for now):
 //   • Every (user, assistant) pair appended after stream completion.
