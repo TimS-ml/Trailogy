@@ -3,13 +3,25 @@ name: HikeCompanion
 options:
   bundleIdPrefix: com.lijuncheng16
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "18.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
 
 packages:
-  KokoroPipeline:
-    path: external/kokoro-coreml/swift
+  # NOTE: KokoroSwift 1.0.7–1.0.10 had a Package.swift bug where the source
+  # imports MLXFast but the manifest doesn't declare it as a dependency.
+  # Fixed in 1.0.11 — pin to that or newer.
+  KokoroSwift:
+    url: https://github.com/mlalma/kokoro-ios
+    minVersion: "1.0.11"
+    maxVersion: "2.0.0"
+  # We use NpyzReader from MLXUtilsLibrary directly to load voices.npz, so
+  # we need it as a direct dep (transitive-via-KokoroSwift isn't enough
+  # for our target's link step).
+  MLXUtilsLibrary:
+    url: https://github.com/mlalma/MLXUtilsLibrary.git
+    minVersion: "0.0.5"
+    maxVersion: "1.0.0"
 
 settings:
   base:
@@ -22,25 +34,21 @@ targets:
   HikeCompanion:
     type: application
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "18.0"
     sources:
       - path: HikeCompanion
         excludes:
-          - "Resources/Models/**"   # included via folder reference below
-      # Models dir is included as a folder reference (blue folder) so Xcode
-      # copies the .mlpackage trees verbatim into the .app bundle without
-      # pre-compiling them. KokoroPipeline compiles them at runtime.
-      - path: HikeCompanion/Resources/Models
-        type: folder
-        buildPhase: resources
+          - "Resources/Models/README.md"
     dependencies:
-      - package: KokoroPipeline
-        product: KokoroPipeline
+      - package: KokoroSwift
+        product: KokoroSwift
+      - package: MLXUtilsLibrary
+        product: MLXUtilsLibrary
     info:
       path: HikeCompanion/Info.plist
       properties:
         CFBundleDisplayName: HikeCompanion
-        CFBundleShortVersionString: "0.1.0"
+        CFBundleShortVersionString: "0.2.0"
         CFBundleVersion: "1"
         UILaunchScreen:
           UIColorName: AccentColor
@@ -55,7 +63,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.lijuncheng16.HikeCompanion
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "0.2.0"
         CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor

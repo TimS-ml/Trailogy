@@ -1,3 +1,0 @@
-[submodule "external/kokoro-coreml"]
-	path = external/kokoro-coreml
-	url = https://github.com/mattmireles/kokoro-coreml.git

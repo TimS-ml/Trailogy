@@ -1,93 +1,81 @@
 // ContentView.swift
-// SwiftUI validator UI: pickers for compute units + fixture, "Run" button,
-// last-run summary, results list, and Play / Share for the most recent WAV.
+// Validator UI for mlalma/kokoro-ios. One text field, voice picker, run
+// button, results readout, replay + share.
 
-import AVFoundation
-import CoreML
 import SwiftUI
 import UIKit
 
 struct ContentView: View {
     @StateObject private var runner = ValidationRunner()
-    @State private var fixtureKey: String = "3s"
-    @State private var computeChoice: ComputeChoice = .all
-    @State private var audioPlayer: AVAudioPlayer?
+    @State private var inputText: String = "The morning mist rose from the valley as we climbed the ridge."
     @State private var showShareSheet = false
     @State private var shareItems: [Any] = []
-
-    private let fixtures = ["3s", "7s", "15s", "30s"]
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Configuration") {
-                    Picker("Compute units", selection: $computeChoice) {
-                        ForEach(ComputeChoice.allCases) { choice in
-                            Text(choice.rawValue).tag(choice)
-                        }
-                    }
-                    Picker("Fixture", selection: $fixtureKey) {
-                        ForEach(fixtures, id: \.self) { key in
-                            Text(key).tag(key)
-                        }
-                    }
-                }
-
                 Section("Status") {
                     Text(runner.status)
                         .font(.callout.monospaced())
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Section("Input") {
+                    TextField("Text to synthesize", text: $inputText, axis: .vertical)
+                        .lineLimit(2...6)
+                        .textFieldStyle(.roundedBorder)
+                    Picker("Voice", selection: $runner.selectedVoice) {
+                        ForEach(runner.voiceNames, id: \.self) { name in
+                            Text(name).tag(name)
+                        }
+                    }
+                    .disabled(runner.voiceNames.isEmpty)
+                }
+
+                Section {
                     Button {
-                        runner.run(fixtureKey: fixtureKey,
-                                   computeUnits: computeChoice.mlComputeUnits)
+                        runner.synthesize(text: inputText)
                     } label: {
                         HStack {
                             if runner.isRunning {
                                 ProgressView().padding(.trailing, 6)
                             }
-                            Text(runner.isRunning ? "Running…" : "Run synthesis")
+                            Text(runner.isRunning ? "Synthesising…" : "Synthesize")
                                 .fontWeight(.semibold)
                         }
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(runner.isRunning)
+                    .disabled(!runner.isReady || runner.isRunning || inputText.isEmpty)
                 }
 
-                if let wav = runner.lastWavURL {
-                    Section("Last WAV") {
-                        Text(wav.lastPathComponent)
-                            .font(.callout.monospaced())
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                if let r = runner.lastResult {
+                    Section("Last run") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(r.voice) · \(r.text)")
+                                .font(.subheadline)
+                                .lineLimit(3)
+                            Text(String(format: "RTF %.3f   (%.1f× realtime)",
+                                        r.rtf, r.rtf > 0 ? 1.0 / r.rtf : 0))
+                                .font(.callout.monospaced())
+                            Text(String(format: "wall %.2f s   audio %.2f s",
+                                        r.wallTimeSec, r.audioDurationSec))
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
                         HStack {
-                            Button("Play") { play(url: wav) }
+                            Button("Play again") { runner.playLastAgain() }
                                 .buttonStyle(.bordered)
                             Spacer()
-                            Button("Share") {
-                                shareItems = [wav]
-                                showShareSheet = true
+                            Button("Share WAV") {
+                                if let url = runner.lastWavURL {
+                                    shareItems = [url]
+                                    showShareSheet = true
+                                }
                             }
                             .buttonStyle(.bordered)
-                        }
-                    }
-                }
-
-                if !runner.results.isEmpty {
-                    Section("Results (newest first)") {
-                        ForEach(runner.results) { r in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("\(r.fixtureKey)  ·  \(r.computeUnits)  ·  bucket \(r.bucketSec)s")
-                                    .font(.subheadline.weight(.semibold))
-                                Text(String(format: "RTF %.3f   (%.1f× realtime)",
-                                            r.rtf, r.rtf > 0 ? 1.0 / r.rtf : 0))
-                                    .font(.callout.monospaced())
-                                Text(String(format: "wall %.3f s   audio %.3f s",
-                                            r.wallTimeSec, r.audioDurationSec))
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.vertical, 2)
+                            .disabled(runner.lastWavURL == nil)
                         }
                     }
                 }
@@ -98,41 +86,9 @@ struct ContentView: View {
             }
         }
     }
-
-    private func play(url: URL) {
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-            let player = try AVAudioPlayer(contentsOf: url)
-            audioPlayer = player
-            player.play()
-        } catch {
-            print("Play error: \(error)")
-        }
-    }
 }
 
-// MARK: - Compute units picker
-
-enum ComputeChoice: String, CaseIterable, Identifiable {
-    case all = "all"
-    case cpuAndNeuralEngine = "cpuAndNeuralEngine"
-    case cpuAndGPU = "cpuAndGPU"
-    case cpuOnly = "cpuOnly"
-
-    var id: String { rawValue }
-
-    var mlComputeUnits: MLComputeUnits {
-        switch self {
-        case .all: return .all
-        case .cpuAndNeuralEngine: return .cpuAndNeuralEngine
-        case .cpuAndGPU: return .cpuAndGPU
-        case .cpuOnly: return .cpuOnly
-        }
-    }
-}
-
-// MARK: - UIActivityViewController bridge for sharing the WAV
+// MARK: - UIActivityViewController bridge
 
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]

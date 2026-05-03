@@ -1,76 +1,45 @@
 #!/usr/bin/env bash
-# Downloads all Core ML model files from huggingface.co/mattmireles/kokoro-coreml
-# into HikeCompanion/Resources/Models/. The mlpackage files are bundled as
-# folder references (see project.yml) and compiled to .mlmodelc on device at
-# first launch by KokoroPipeline.
+# Downloads the Kokoro MLX model files from mlalma's KokoroTestApp Git LFS
+# storage. We bypass git-lfs install entirely by hitting GitHub's raw URL —
+# GitHub auto-redirects raw.githubusercontent.com requests for LFS-tracked
+# objects to the LFS storage host.
+#
+# Files (placed in HikeCompanion/Resources/Models/):
+#   kokoro-v1_0.safetensors  ~600 MB   neural network weights
+#   voices.npz               ~30 MB    28 voice embeddings
 #
 # Usage:  bash scripts/fetch-models.sh
-# Re-run safe: skips files that already exist with the right size.
+# Re-run safe: skips files that already exist with non-trivial size.
 
 set -euo pipefail
 
-REPO="mattmireles/kokoro-coreml"
 DEST="$(cd "$(dirname "$0")/.." && pwd)/HikeCompanion/Resources/Models"
-API="https://huggingface.co/api/models/${REPO}/tree/main"
-RESOLVE="https://huggingface.co/${REPO}/resolve/main"
+RAW="https://github.com/mlalma/KokoroTestApp/raw/main/Resources"
 
 mkdir -p "$DEST"
 
-echo "==> Listing files at $REPO ..."
-LIST=$(curl -fsSL "$API")
-
-# A .mlpackage is a directory containing files like "Manifest.json", "Data/...",
-# "Metadata.json", etc. The HF API returns flat file paths; we recursively walk
-# every directory entry and download every leaf file under each .mlpackage tree.
-
-list_recursive() {
-  local prefix="$1"
-  local url
-  if [[ -z "$prefix" ]]; then
-    url="$API"
-  else
-    url="${API}/${prefix}"
+download() {
+  local file="$1"
+  local out="$DEST/$file"
+  if [[ -f "$out" ]]; then
+    local sz
+    sz=$(stat -f %z "$out" 2>/dev/null || stat -c %s "$out" 2>/dev/null || echo 0)
+    if [[ "$sz" -gt 1000000 ]]; then
+      echo "  $file already present ($(du -h "$out" | cut -f1)) — skipping"
+      return 0
+    fi
+    echo "  $file exists but is suspiciously small ($sz bytes); re-downloading"
+    rm -f "$out"
   fi
-  curl -fsSL "$url" | python3 -c '
-import json, sys
-items = json.load(sys.stdin)
-for it in items:
-    print(it["type"], it["path"])
-' || true
+  echo "==> Downloading $file ..."
+  curl -fL --progress-bar "$RAW/$file" -o "$out"
 }
 
-download_file() {
-  local relpath="$1"
-  local out="${DEST}/${relpath}"
-  mkdir -p "$(dirname "$out")"
-  if [[ -f "$out" && -s "$out" ]]; then
-    return 0
-  fi
-  echo "    fetching $relpath"
-  curl -fsSL "${RESOLVE}/${relpath}" -o "$out"
-}
-
-walk() {
-  local prefix="$1"
-  local entries
-  entries=$(list_recursive "$prefix")
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    local kind path
-    kind=$(echo "$line" | awk '{print $1}')
-    path=$(echo "$line" | cut -d' ' -f2-)
-    case "$kind" in
-      file) download_file "$path" ;;
-      directory) walk "$path" ;;
-    esac
-  done <<< "$entries"
-}
-
-echo "==> Downloading into $DEST ..."
-walk ""
+download "kokoro-v1_0.safetensors"
+download "voices.npz"
 
 echo ""
-echo "==> Done. Contents:"
-ls -1 "$DEST" | head -40
+echo "==> Done."
+ls -lh "$DEST" | grep -v '^total'
 echo ""
-echo "Total size: $(du -sh "$DEST" | cut -f1)"
+echo "Total Models/ size: $(du -sh "$DEST" | cut -f1)"

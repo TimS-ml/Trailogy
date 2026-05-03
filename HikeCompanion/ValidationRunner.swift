@@ -1,180 +1,220 @@
 // ValidationRunner.swift
-// Orchestrates one synthesis run: load fixture JSON from bundle, init the
-// model provider with the chosen MLComputeUnits, call executeKokoroSynthesis,
-// time it, save the WAV to Documents/, and surface a RunResult to the UI.
+// Wraps mlalma/kokoro-ios (KokoroSwift / MLX). Loads model + voices from
+// the app bundle, exposes one `synthesize(text:)` call that times wall
+// clock vs audio duration, plays the resulting audio, and saves a WAV
+// to Documents/.
 
-import CoreML
+import AVFoundation
 import Foundation
-import KokoroPipeline
+import KokoroSwift
+import MLX
+import MLXUtilsLibrary
 
 final class ValidationRunner: ObservableObject {
 
-    // MARK: - Published UI state
-    @Published private(set) var status: String = "Ready"
-    @Published private(set) var results: [RunResult] = []
-    @Published private(set) var isRunning: Bool = false
+    // MARK: - Published state
+
+    @Published private(set) var status: String = "Loading model…"
+    @Published private(set) var voiceNames: [String] = []
+    @Published var selectedVoice: String = ""
+    @Published private(set) var lastResult: RunResult?
     @Published private(set) var lastWavURL: URL?
+    @Published private(set) var isReady: Bool = false
+    @Published private(set) var isRunning: Bool = false
 
-    // MARK: - Internal cache (provider is reused if compute units don't change)
-    private var provider: ConfigurableModelProvider?
-    private var loadedComputeUnits: MLComputeUnits?
+    // MARK: - Internals
 
-    private let workQueue = DispatchQueue(label: "com.lijuncheng16.HikeCompanion.validator",
+    private var tts: KokoroTTS?
+    private var voices: [String: MLXArray] = [:]
+    private var audioEngine: AVAudioEngine?
+    private var playerNode: AVAudioPlayerNode?
+
+    private let workQueue = DispatchQueue(label: "com.lijuncheng16.HikeCompanion.runner",
                                           qos: .userInitiated)
 
-    // MARK: - Public API
+    // MARK: - Lifecycle
 
-    func run(fixtureKey: String, computeUnits: MLComputeUnits) {
-        guard !isRunning else { return }
+    init() {
+        loadAsync()
+    }
+
+    private func loadAsync() {
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try self.loadSync()
+                DispatchQueue.main.async {
+                    self.isReady = true
+                    self.status = "Ready. Type something and tap Synthesize."
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.status = "Load error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func loadSync() throws {
+        guard let modelURL = Bundle.main.url(forResource: "kokoro-v1_0",
+                                             withExtension: "safetensors") else {
+            throw RunnerError.modelMissing
+        }
+        guard let voicesURL = Bundle.main.url(forResource: "voices",
+                                              withExtension: "npz") else {
+            throw RunnerError.voicesMissing
+        }
+
+        DispatchQueue.main.async { self.status = "Initialising KokoroTTS (~10–30 s)…" }
+        let engine = KokoroTTS(modelPath: modelURL)
+        self.tts = engine
+
+        DispatchQueue.main.async { self.status = "Loading voices…" }
+        let loadedVoices = NpyzReader.read(fileFromPath: voicesURL) ?? [:]
+        self.voices = loadedVoices
+
+        // Voice keys in voices.npz look like "af_bella.npy". Strip the suffix
+        // for display, sort alphabetically.
+        let names = loadedVoices.keys
+            .map { String($0.split(separator: ".")[0]) }
+            .sorted()
+        DispatchQueue.main.async {
+            self.voiceNames = names
+            // Default to af_bella if present, else first.
+            self.selectedVoice = names.first(where: { $0 == "af_bella" }) ?? names.first ?? ""
+        }
+
+        // Audio engine for playback.
+        let aEngine = AVAudioEngine()
+        let player = AVAudioPlayerNode()
+        aEngine.attach(player)
+        self.audioEngine = aEngine
+        self.playerNode = player
+
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default)
+            try session.setActive(true)
+        } catch {
+            // Non-fatal; playback may still work.
+        }
+    }
+
+    // MARK: - Synthesize
+
+    func synthesize(text: String) {
+        guard isReady, !isRunning, let tts = tts else { return }
+        let voiceKey = selectedVoice
+        guard let voiceArray = voices["\(voiceKey).npy"] else {
+            DispatchQueue.main.async {
+                self.status = "No voice array for \(voiceKey)"
+            }
+            return
+        }
 
         DispatchQueue.main.async {
             self.isRunning = true
-            self.status = "Preparing…"
+            self.status = "Synthesising…"
         }
 
         workQueue.async { [weak self] in
             guard let self else { return }
             do {
-                try self.runSync(fixtureKey: fixtureKey, computeUnits: computeUnits)
+                // Voice name convention: prefix 'a' = US English, else GB.
+                let language: Language = (voiceKey.first == "a") ? .enUS : .enGB
+
+                let wallStart = Date().timeIntervalSince1970
+                let (audio, _) = try tts.generateAudio(
+                    voice: voiceArray,
+                    language: language,
+                    text: text
+                )
+                let wallTime = Date().timeIntervalSince1970 - wallStart
+
+                let sampleRate = Double(KokoroTTS.Constants.samplingRate)
+                let audioDur = Double(audio.count) / sampleRate
+                let rtf = audioDur > 0 ? (wallTime / audioDur) : 0
+
+                let wavURL = try Self.saveWav(audio: audio, sampleRate: sampleRate)
+
+                let result = RunResult(
+                    text: text,
+                    voice: voiceKey,
+                    wallTimeSec: wallTime,
+                    audioDurationSec: audioDur,
+                    rtf: rtf,
+                    wavURL: wavURL
+                )
+
+                DispatchQueue.main.async {
+                    self.lastResult = result
+                    self.lastWavURL = wavURL
+                    self.status = String(
+                        format: "RTF %.3f  (%.1f× realtime)  audio %.2f s  wall %.2f s",
+                        rtf, rtf > 0 ? 1.0 / rtf : 0, audioDur, wallTime
+                    )
+                    self.isRunning = false
+                }
+
+                self.play(audio: audio, sampleRate: sampleRate)
             } catch {
                 DispatchQueue.main.async {
-                    self.status = "Error: \(error.localizedDescription)"
+                    self.status = "Synth error: \(error.localizedDescription)"
                     self.isRunning = false
                 }
             }
         }
     }
 
-    // MARK: - Heavy work (off main thread)
+    // MARK: - Playback
 
-    private func runSync(fixtureKey: String, computeUnits: MLComputeUnits) throws {
-        // 1) (Re-)init provider if compute units changed
-        if loadedComputeUnits != computeUnits || provider == nil {
-            DispatchQueue.main.async {
-                self.status = "Loading models on \(Self.name(computeUnits))… (first run compiles, ~10–30 s)"
-            }
-            provider = ConfigurableModelProvider(
-                modelsDir: ValidationRunner.modelsBundleDir(),
-                computeUnits: computeUnits
-            )
-            loadedComputeUnits = computeUnits
+    private func play(audio: [Float], sampleRate: Double) {
+        guard let engine = audioEngine, let player = playerNode else { return }
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate,
+                                         channels: 1) else { return }
+        guard let buf = AVAudioPCMBuffer(pcmFormat: format,
+                                         frameCapacity: AVAudioFrameCount(audio.count)) else { return }
+        buf.frameLength = buf.frameCapacity
+        let dst = buf.floatChannelData![0]
+        audio.withUnsafeBufferPointer { src in
+            guard let base = src.baseAddress else { return }
+            dst.update(from: base, count: src.count)
         }
-        guard let p = provider else {
-            throw RunnerError.providerInitFailed
-        }
+        engine.connect(player, to: engine.mainMixerNode, format: format)
+        do {
+            if !engine.isRunning { try engine.start() }
+        } catch { return }
+        player.scheduleBuffer(buf, at: nil, options: .interrupts, completionHandler: nil)
+        if !player.isPlaying { player.play() }
+    }
 
-        // 2) Load fixture + HNSF weights from bundle
-        DispatchQueue.main.async { self.status = "Loading fixture \(fixtureKey)…" }
-        let benchInput = try ValidationRunner.loadFixture(key: fixtureKey)
-        let weights = try ValidationRunner.loadHnsfWeights()
-
-        // 3) Run synthesis (this is the part we're timing)
-        DispatchQueue.main.async { self.status = "Synthesising…" }
-        let request = KokoroSynthesisRequest(
-            inputIds: benchInput.input_ids,
-            attentionMask: benchInput.attention_mask,
-            refS: benchInput.ref_s,
-            speed: benchInput.speed,
-            seed: 42,
-            warmModelsBeforeTiming: true,
-            bucketDurationOverrideSeconds: benchInput.canonical_duration_s
-        )
-
-        var tensorDump: TensorDumpWriter? = nil
-        let synth = try executeKokoroSynthesis(
-            request: request,
-            modelProvider: p,
-            linearWeights: weights.linear_weights,
-            linearBias: weights.linear_bias,
-            tensorDump: &tensorDump
-        )
-
-        // 4) Save WAV
-        let wavURL = try ValidationRunner.saveWav(
-            audio: synth.audio,
-            key: fixtureKey,
-            computeUnits: computeUnits
-        )
-
-        // 5) Compute results, publish on main
-        let canonicalDur = benchInput.canonical_duration_s ?? synth.audioDurationSeconds
-        let rtf = canonicalDur > 0 ? (synth.wallTimeSeconds / canonicalDur) : -1
-        let result = RunResult(
-            computeUnits: Self.name(computeUnits),
-            fixtureKey: fixtureKey,
-            wallTimeSec: synth.wallTimeSeconds,
-            audioDurationSec: canonicalDur,
-            rtf: rtf,
-            bucketSec: synth.bucketSeconds,
-            timestamp: Date(),
-            wavURL: wavURL
-        )
-
-        DispatchQueue.main.async {
-            self.results.insert(result, at: 0)
-            self.lastWavURL = wavURL
-            if rtf > 0 {
-                self.status = String(format: "RTF %.3f  (%.1f× realtime)", rtf, 1.0 / rtf)
-            } else {
-                self.status = "Done"
-            }
-            self.isRunning = false
+    func playLastAgain() {
+        guard let url = lastWavURL else { return }
+        // Re-decode and play
+        do {
+            let file = try AVAudioFile(forReading: url)
+            guard let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
+                                             frameCapacity: AVAudioFrameCount(file.length)) else { return }
+            try file.read(into: buf)
+            guard let engine = audioEngine, let player = playerNode else { return }
+            engine.connect(player, to: engine.mainMixerNode, format: file.processingFormat)
+            if !engine.isRunning { try engine.start() }
+            player.scheduleBuffer(buf, at: nil, options: .interrupts, completionHandler: nil)
+            if !player.isPlaying { player.play() }
+        } catch {
+            // ignore
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - WAV save
 
-    private static func modelsBundleDir() -> URL {
-        // Folder reference "Models" is copied as-is into the .app bundle.
-        Bundle.main.bundleURL.appendingPathComponent("Models")
-    }
-
-    private static func loadFixture(key: String) throws -> BenchInput {
-        // Try direct lookup first; fall back to subdirectory.
-        let candidates: [URL?] = [
-            Bundle.main.url(forResource: key, withExtension: "json"),
-            Bundle.main.url(forResource: key, withExtension: "json", subdirectory: "Fixtures"),
-        ]
-        guard let url = candidates.compactMap({ $0 }).first else {
-            throw RunnerError.fixtureMissing(key: key)
-        }
-        let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(BenchInput.self, from: data)
-    }
-
-    private static func loadHnsfWeights() throws -> HnsfWeights {
-        let candidates: [URL?] = [
-            Bundle.main.url(forResource: "hnsf_weights", withExtension: "json"),
-            Bundle.main.url(forResource: "hnsf_weights", withExtension: "json", subdirectory: "Fixtures"),
-        ]
-        guard let url = candidates.compactMap({ $0 }).first else {
-            throw RunnerError.hnsfMissing
-        }
-        let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(HnsfWeights.self, from: data)
-    }
-
-    private static func saveWav(audio: [Float], key: String, computeUnits: MLComputeUnits) throws -> URL {
+    private static func saveWav(audio: [Float], sampleRate: Double) throws -> URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let ts = Int(Date().timeIntervalSince1970)
-        let filename = "\(key)_\(name(computeUnits))_\(ts).wav"
-        let url = docs.appendingPathComponent(filename)
-        try writeWavMono16(
-            path: url.path,
-            samples: audio,
-            sampleRate: UInt32(PipelineConstants.sampleRate)
-        )
+        let url = docs.appendingPathComponent("hike_\(ts).wav")
+        // Use the package's built-in WAV writer rather than re-implementing.
+        try AudioUtils.writeWavFile(samples: audio, sampleRate: sampleRate, fileURL: url)
         return url
-    }
-
-    static func name(_ cu: MLComputeUnits) -> String {
-        switch cu {
-        case .all: return "all"
-        case .cpuAndGPU: return "cpuAndGPU"
-        case .cpuAndNeuralEngine: return "cpuAndNeuralEngine"
-        case .cpuOnly: return "cpuOnly"
-        @unknown default: return "unknown"
-        }
     }
 }
 
@@ -182,32 +222,27 @@ final class ValidationRunner: ObservableObject {
 
 struct RunResult: Identifiable {
     let id = UUID()
-    let computeUnits: String
-    let fixtureKey: String
+    let text: String
+    let voice: String
     let wallTimeSec: Double
     let audioDurationSec: Double
-    /// wallTime / audioDuration; lower is better. < 1.0 = faster than realtime.
+    /// wallTime / audioDuration; lower is better (< 1.0 = faster than realtime).
     let rtf: Double
-    let bucketSec: Int
-    let timestamp: Date
     let wavURL: URL
 }
 
 // MARK: - Errors
 
 enum RunnerError: LocalizedError {
-    case providerInitFailed
-    case fixtureMissing(key: String)
-    case hnsfMissing
+    case modelMissing
+    case voicesMissing
 
     var errorDescription: String? {
         switch self {
-        case .providerInitFailed:
-            return "Failed to initialize ConfigurableModelProvider."
-        case .fixtureMissing(let key):
-            return "Fixture \(key).json not in app bundle. Run scripts/prepare-fixtures.sh and rebuild."
-        case .hnsfMissing:
-            return "hnsf_weights.json not in app bundle. Run scripts/prepare-fixtures.sh and rebuild."
+        case .modelMissing:
+            return "kokoro-v1_0.safetensors not in app bundle. Run scripts/fetch-models.sh and rebuild."
+        case .voicesMissing:
+            return "voices.npz not in app bundle. Run scripts/fetch-models.sh and rebuild."
         }
     }
 }
