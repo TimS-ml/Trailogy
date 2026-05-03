@@ -38,20 +38,17 @@ struct ContentView: View {
                         .lineLimit(1...4)
                         .textFieldStyle(.roundedBorder)
 
-                    // Voice-input row: tap to start/stop on-device ASR.
-                    // Recognized text replaces the question field on stop.
+                    // Voice-input row: hold to record, release to ask.
+                    // Live transcript appears below while recording.
                     HStack {
-                        Button {
-                            toggleRecording()
-                        } label: {
-                            HStack {
-                                Image(systemName: speech.isRecording ? "stop.circle.fill" : "mic.fill")
-                                Text(speech.isRecording ? "Stop" : "Tap to speak")
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(speech.isRecording ? .red : .accentColor)
-                        .disabled(!speech.isAuthorized || isAsking)
+                        HoldToSpeakButton(
+                            isRecording: speech.isRecording,
+                            isEnabled: speech.isAuthorized && !isAsking && gemma.status != "Loading Gemma 4 (10–30 s)…",
+                            onPress: { startRecording() },
+                            onRelease: { holdReleased() }
+                        )
+
+                        Spacer()
 
                         Text(speech.status)
                             .font(.caption.monospaced())
@@ -194,25 +191,28 @@ struct ContentView: View {
         memoryEvents.append((label: label, stats: stats))
     }
 
-    /// Toggle voice recording. On stop, copy the transcript into the
-    /// Question field. User reviews, then taps Ask.
-    private func toggleRecording() {
-        if speech.isRecording {
-            speech.stopRecording()
-            // Brief delay so the final partial result lands before we read it.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                let text = speech.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty {
-                    self.question = text
-                }
-            }
-        } else {
-            do {
-                try speech.startRecording()
-            } catch {
-                // Errors surface in speech.status via the recognizer itself
-                // when possible; surface unexpected ones here too.
-                print("Speech start error: \(error.localizedDescription)")
+    /// Begin recording on press-down.
+    private func startRecording() {
+        do {
+            try speech.startRecording()
+        } catch {
+            // Permission / availability errors already surface in
+            // speech.status via SpeechRecognizer; nothing further to do.
+        }
+    }
+
+    /// Stop recording and immediately fire Ask with the recognized text.
+    /// Waits ~600 ms for SFSpeechRecognizer to deliver its final result
+    /// before reading `transcript`.
+    private func holdReleased() {
+        speech.stopRecording()
+        Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            let text = speech.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            await MainActor.run {
+                self.question = text
+                self.ask()
             }
         }
     }
@@ -266,6 +266,48 @@ struct ContentView: View {
                 isAsking = false
             }
         }
+    }
+}
+
+// MARK: - HoldToSpeakButton
+
+/// Press-and-hold button that fires `onPress` when the finger lands and
+/// `onRelease` when it lifts. Uses a zero-distance `DragGesture` because
+/// SwiftUI's `Button` and `LongPressGesture` don't expose a clean
+/// "press began" hook.
+private struct HoldToSpeakButton: View {
+    let isRecording: Bool
+    let isEnabled: Bool
+    let onPress: () -> Void
+    let onRelease: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: isRecording ? "mic.fill" : "mic")
+            Text(isRecording ? "Listening…" : "Hold to speak")
+                .fontWeight(.semibold)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isRecording ? Color.red.opacity(0.18) : Color.gray.opacity(0.18))
+        )
+        .foregroundStyle(isRecording ? Color.red : (isEnabled ? Color.primary : Color.secondary))
+        .opacity(isEnabled ? 1.0 : 0.5)
+        .scaleEffect(isRecording ? 1.04 : 1.0)
+        .animation(.easeInOut(duration: 0.12), value: isRecording)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard isEnabled, !isRecording else { return }
+                    onPress()
+                }
+                .onEnded { _ in
+                    guard isRecording else { return }
+                    onRelease()
+                }
+        )
     }
 }
 
