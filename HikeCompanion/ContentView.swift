@@ -69,6 +69,17 @@ struct ContentView: View {
                     // to be ready (so we can speak the response) and that we
                     // have a question and aren't already running.
                     .disabled(!tts.isReady || isAsking || question.isEmpty)
+
+                    HStack {
+                        Text("Conversation: \(gemma.historyTurnCount) turn\(gemma.historyTurnCount == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Reset") { gemma.reset() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(gemma.historyTurnCount == 0 || isAsking)
+                    }
                 }
 
                 if !streamingText.isEmpty {
@@ -181,11 +192,13 @@ struct ContentView: View {
                 }
                 markMemoryEvent("Ask: after generation")
 
-                // 3. Free Gemma's ~3.5 GB before Kokoro starts TTS — this
-                //    is the critical step that was OOMing the Gemma → Kokoro
-                //    hand-off. Next Ask will reload (~10–30 s).
-                gemma.unload()
-                markMemoryEvent("Ask: after Gemma unload")
+                // 3. Keep Gemma resident across turns so conversation history
+                //    actually feels conversational (no 10–30 s reload between
+                //    follow-ups). Drop MLX's transient cache buffers though —
+                //    those would pile up and were the cause of the original
+                //    Gemma → Kokoro OOM. The model weights stay.
+                MLX.Memory.clearCache()
+                markMemoryEvent("Ask: after cache clear")
 
                 // 4. Speak the response.
                 if !fullText.isEmpty {
