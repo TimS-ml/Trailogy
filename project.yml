@@ -54,7 +54,14 @@ targets:
     sources:
       - path: HikeCompanion
         excludes:
-          - "Resources/Models/README.md"
+          - "Resources/Models/**"
+      # Models dir as a "blue folder" reference — preserves directory tree
+      # in the .app bundle so Kokoro and Gemma files end up in separate
+      # subdirectories. Critical because mlx-swift-lm globs `*.safetensors`
+      # from the model directory; without the split, it would pick up
+      # Kokoro's weights and crash with "Unhandled keys [bert, decoder, …]".
+      - path: HikeCompanion/Resources/Models
+        type: folder
     dependencies:
       # KokoroSwift is built as a dynamic .framework — must be embedded in
       # the .app or dyld aborts at launch with __abort_with_payload.
