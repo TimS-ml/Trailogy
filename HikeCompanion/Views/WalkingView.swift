@@ -826,7 +826,7 @@ struct WalkingView: View {
     private func runAsk(prompt: String) {
         isAnswering = true
         answerText = ""
-        let photoForThisTurn = (showPhotoContext ? capturedImage : nil)
+        var photoForThisTurn = (showPhotoContext ? capturedImage : nil)
         let kind: GemmaService.LoadedKind = (photoForThisTurn != nil) ? .vlm : .text
 
         Task {
@@ -848,6 +848,14 @@ struct WalkingView: View {
                     await MainActor.run { answerText = fullText }
                 }
 
+                if photoForThisTurn != nil {
+                    photoForThisTurn = nil
+                    await MainActor.run {
+                        showPhotoContext = false
+                        capturedImage = nil
+                    }
+                }
+
                 // Free Gemma between turns (per CLAUDE.md / commit e681ee2).
                 gemma.unload()
 
@@ -867,7 +875,11 @@ struct WalkingView: View {
                 }
             } catch {
                 await MainActor.run {
+                    gemma.unload()
+                    photoForThisTurn = nil
                     answerText += "\n\n[error: \(error.localizedDescription)]"
+                    showPhotoContext = false
+                    capturedImage = nil
                     isAnswering = false
                 }
             }

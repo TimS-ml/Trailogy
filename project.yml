@@ -20,9 +20,7 @@ packages:
     path: external/MLXUtilsLibrary
   # Gemma 4 LLM via MLX. Same MLX runtime as Kokoro = unified memory pool.
   mlx-swift-lm:
-    url: https://github.com/ml-explore/mlx-swift-lm
-    minVersion: "3.31.3"
-    maxVersion: "4.0.0"
+    path: external/mlx-swift-lm
   # HuggingFace Hub client + tokenizers — used by mlx-swift-lm's
   # `#huggingFaceTokenizerLoader()` macro to load tokenizer.json from the
   # bundled model directory.
@@ -99,6 +97,18 @@ targets:
       # swift-transformers/Hub but listed directly so we can import it.
       - package: swift-huggingface
         product: HuggingFace
+    # Increased Memory Limit entitlement (Phase 3b VLM).
+    # Without this the iPhone foreground app footprint cap is ~3.5–4 GB
+    # before iOS jetsam kills the process. Gemma 4 VLM resident is
+    # ~2.78 GB MLX active and the prefill eval adds ~300 MB transient,
+    # which puts us right on the line. The entitlement raises the
+    # threshold to ~6 GB on iPhone Pro models. Available on both free
+    # and paid Apple Developer accounts; xcodegen auto-creates the
+    # .entitlements file at the path below if missing.
+    entitlements:
+      path: HikeCompanion/HikeCompanion.entitlements
+      properties:
+        com.apple.developer.kernel.increased-memory-limit: true
     info:
       path: HikeCompanion/Info.plist
       properties:

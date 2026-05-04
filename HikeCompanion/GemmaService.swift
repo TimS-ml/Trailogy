@@ -76,6 +76,14 @@ final class GemmaService: ObservableObject {
     /// so 20 = 10 turns of context. Past this, oldest messages drop off.
     private let maxHistoryMessages = 20
 
+    /// VLM asks already carry a large image-token block (~196 tokens
+    /// for a 14×14 patch grid). Replaying any conversation history on
+    /// top of that pushes prefill activations dangerously close to the
+    /// jetsam line. Drop history entirely for image asks — the photo
+    /// is the context, not prior chat. (For continuation: bump back to
+    /// 2 once we've validated the basic image path is stable.)
+    private let maxImageHistoryMessages = 0
+
     private let systemInstructions = """
     You are a friendly outdoor companion who helps hikers understand what they \
     see — geology, plants, animals, weather, and climate change. Keep responses \
@@ -83,6 +91,15 @@ final class GemmaService: ObservableObject {
     not as if writing a report. Remember earlier turns of this conversation \
     when answering follow-up questions.
     """
+
+    /// Mobile memory budget for both text and VLM asks. The app only needs
+    /// short spoken answers, so keep generation and KV growth bounded.
+    private let generationParameters = GenerateParameters(
+        maxTokens: 160,
+        maxKVSize: 768,
+        temperature: 0.7,
+        prefillStepSize: 128
+    )
 
     // MARK: - Lifecycle
 
@@ -170,14 +187,18 @@ final class GemmaService: ObservableObject {
             imageInputs = []
         }
 
-        // Snapshot history (already capped).
-        let historySnapshot = conversationHistory
+        // Snapshot history. Image asks have a much larger prompt because
+        // Gemma4 expands each image into vision tokens, so use a smaller
+        // replay window on that path.
+        let historySnapshot = imageInputs.isEmpty
+            ? conversationHistory
+            : Array(conversationHistory.suffix(maxImageHistoryMessages))
 
         let session = ChatSession(
             container,
             instructions: systemInstructions,
             history: historySnapshot,
-            generateParameters: GenerateParameters(temperature: 0.7)
+            generateParameters: generationParameters
         )
 
         return AsyncThrowingStream { continuation in

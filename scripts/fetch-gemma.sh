@@ -63,6 +63,65 @@ while IFS= read -r file; do
 done <<< "$FILES"
 
 echo ""
+echo "==> Hoisting Gemma processor fields to top level for mlx-swift-lm..."
+# Why (hoist): HF's official Gemma 4 processor_config.json keeps
+# image-processor fields nested under "image_processor" (size,
+# image_mean, image_std, do_normalize). mlx-swift-lm's
+# Gemma4ProcessorConfiguration decoder expects them flat at the top
+# level. Without this hoist the Swift decoder gets nil for `size` and
+# falls back to 800x800, which blows up vision-tower memory.
+#
+# Why (size override to 960x672 instead of upstream 224x224):
+# Gemma 4's trained vision pooler is a kernel=3 stride pooler over
+# the 14×20 (or 20×14) bucket grid that exactly fills the
+# max_patches=2520 budget. The mlx-swift-lm pooler degenerates at
+# 224x224 (14×14=196 patches → 196 raw + 84 zero outputs instead of
+# the trained 280 pooled features). 960x672 produces 60×42=2520
+# patches → 20×14=280 cleanly-pooled tokens, matching what the
+# language model was trained to attend to.
+#
+# We do NOT modify the architectural fields (image_seq_length=280,
+# pooling_kernel_size=3, default_output_length=280) — they are trained.
+# The increased-memory-limit entitlement absorbs the 2520-patch
+# encoder pass.
+TRAINED_SIZE='{"height": 960, "width": 672}'
+PCFG="$DEST/processor_config.json"
+if [[ -f "$PCFG" ]]; then
+  python3 - "$PCFG" "$TRAINED_SIZE" <<'PY'
+import json, sys
+p = sys.argv[1]
+trained_size = json.loads(sys.argv[2])
+with open(p) as f:
+    cfg = json.load(f)
+ip = cfg.get("image_processor", {})
+# Top-level keys mlx-swift-lm's Gemma4ProcessorConfiguration reads.
+# We HOIST mean/std/do_normalize from image_processor (they're correct
+# for Gemma 4 there), but FORCE size to the trained 960×672 shape.
+patch = {
+    "do_normalize": ip.get("do_normalize", False),
+    "image_mean":   ip.get("image_mean",   [0.0, 0.0, 0.0]),
+    "image_std":    ip.get("image_std",    [1.0, 1.0, 1.0]),
+    "size":         trained_size,
+}
+changed = []
+for k, v in patch.items():
+    if cfg.get(k) != v:
+        cfg[k] = v
+        changed.append(k)
+# Also override the nested image_processor.size so HF tooling agrees.
+if ip and ip.get("size") != trained_size:
+    ip["size"] = trained_size
+    changed.append("image_processor.size")
+if changed:
+    with open(p, "w") as f:
+        json.dump(cfg, f, indent=2)
+    print("   patched: " + ", ".join(changed))
+else:
+    print("   already patched (no-op)")
+PY
+fi
+
+echo ""
 echo "==> Done. Models/Gemma/ contents:"
 ls -lh "$DEST" | grep -v '^total'
 echo ""
