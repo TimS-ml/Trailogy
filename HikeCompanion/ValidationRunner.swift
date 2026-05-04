@@ -21,9 +21,21 @@ final class ValidationRunner: ObservableObject {
     @Published private(set) var lastResult: RunResult?
     @Published private(set) var lastWavURL: URL?
     @Published private(set) var isReady: Bool = false
+    /// True from `synthesize` start until the synth+play workQueue closure
+    /// returns. Note: this can be `false` while audio is still playing
+    /// (synth completes before playback finishes).
     @Published private(set) var isRunning: Bool = false
+    /// True while audio is actively playing through the player node.
+    /// Use this (not `isRunning`) to know whether the user is hearing
+    /// something. Goes true when playback starts, false when the caption
+    /// timer reaches the last token (or `stop()` is called).
+    @Published private(set) var isSpeaking: Bool = false
     /// Words spoken so far during current playback. Updates ~every 50 ms via Timer.
     @Published private(set) var currentCaption: String = ""
+
+    /// When true, the next `play(...)` call bails out and any in-flight
+    /// synth result is discarded. Cleared on the next `synthesize(...)` entry.
+    private var stopRequested: Bool = false
 
     // MARK: - Internals
 
@@ -153,6 +165,7 @@ final class ValidationRunner: ObservableObject {
 
         DispatchQueue.main.async {
             self.isRunning = true
+            self.stopRequested = false
             self.status = "Loading Kokoro…"
             self.currentCaption = ""
             self.stopCaptionTimer()
@@ -290,6 +303,10 @@ final class ValidationRunner: ObservableObject {
     // MARK: - Playback + caption timer
 
     private func play(audio: [Float], sampleRate: Double) {
+        // If the user interrupted (e.g. held the mic to ask a question)
+        // between synth completion and this point, drop the audio rather
+        // than blasting it over their question.
+        if stopRequested { return }
         guard let engine = audioEngine, let player = playerNode else { return }
         guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate,
                                          channels: 1) else { return }
@@ -334,10 +351,12 @@ final class ValidationRunner: ObservableObject {
 
     /// Walks captionTokens in order, advancing as audioTime crosses each
     /// token's start_ts. Updates currentCaption on the main run loop.
+    /// Also drives `isSpeaking` — true while audio is reaching the user.
     private func startCaptionTimer() {
         stopCaptionTimer()
         guard !captionTokens.isEmpty else { return }
         currentCaption = ""
+        isSpeaking = true
         captionStartTime = Date()
         var nextIndex = 0
 
@@ -360,6 +379,7 @@ final class ValidationRunner: ObservableObject {
             if let last = self.captionTokens.last, elapsed > last.endTs + 0.5 {
                 timer.invalidate()
                 self.captionTimer = nil
+                self.isSpeaking = false
             }
         }
     }
@@ -368,6 +388,39 @@ final class ValidationRunner: ObservableObject {
         captionTimer?.invalidate()
         captionTimer = nil
         captionStartTime = nil
+    }
+
+    // MARK: - Stop / interrupt
+
+    /// Halt audio playback immediately. Used when the user holds the mic
+    /// to interrupt an ongoing tour-guide narration. Safe to call from
+    /// any thread; bounces work to main where needed.
+    ///
+    /// Side effects:
+    ///   • `playerNode.stop()` halts the audio buffer (AVAudioPlayerNode)
+    ///   • `stopRequested = true` so any synth still in flight discards
+    ///     its output instead of restarting playback
+    ///   • caption timer stops and `isSpeaking` flips to false
+    ///   • **`isRunning` flips to false** so the next `synthesize(...)`
+    ///     call doesn't silently bail on the `!isRunning` guard. This is
+    ///     critical for the pause/resume path — without it, an in-flight
+    ///     synth's main.async (which sets isRunning=false on completion)
+    ///     might not have run yet by the time the user clicks resume,
+    ///     and the resume's synthesize() returns immediately with no
+    ///     audio.
+    ///   • `currentCaption` is preserved at its current value so the
+    ///     caller can read "what we got through" before resetting it
+    func stop() {
+        DispatchQueue.main.async {
+            self.stopRequested = true
+            self.playerNode?.stop()
+            self.captionTimer?.invalidate()
+            self.captionTimer = nil
+            self.captionStartTime = nil
+            self.isSpeaking = false
+            self.isRunning = false
+            self.status = "Idle (stopped)"
+        }
     }
 
     // MARK: - Text chunking (avoid 510-token cap)

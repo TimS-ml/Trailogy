@@ -47,6 +47,21 @@ struct Trail: Identifiable, Hashable {
     /// 0..1 horizontal position of each stop on the progress bar. Five
     /// equally-spaced positions for Kildoo (12, 32, 50, 70, 88 in the mockup).
     let stopProgressPositions: [Double]
+
+    /// Spoken when the user taps "Begin". Kokoro reads this as a
+    /// trail-guide-style introduction. Length is tuned so reading takes
+    /// roughly 30–60 s — long enough to feel substantial, short enough
+    /// to keep the user engaged before they want to interact.
+    /// The tour-cycle phase timer pauses while this is speaking.
+    let intro: String
+}
+
+extension TrailStop {
+    /// All sentences joined with single spaces — convenience for feeding
+    /// the whole stop blurb to Kokoro in one synth call.
+    var spokenNarration: String {
+        sentences.joined(separator: " ")
+    }
 }
 
 enum TrailStatus: Equatable {
@@ -135,7 +150,24 @@ enum TrailData {
             "0.5 mi · about 14 minutes",
             "0.4 mi · back to the mill"
         ],
-        stopProgressPositions: [0.12, 0.32, 0.50, 0.70, 0.88]
+        stopProgressPositions: [0.12, 0.32, 0.50, 0.70, 0.88],
+        intro: """
+        Welcome to the Kildoo Trail. This is a two-mile loop rated \
+        moderate — about an hour at a comfortable pace, with some \
+        uneven footing where we drop into the gorge. We're at \
+        McConnells Mill State Park, on the west bank of Slippery Rock \
+        Creek. The creek carved this sandstone gorge about fifteen \
+        thousand years ago, when the last glaciers retreated and a \
+        melt-water torrent cut this channel in a few hundred years.
+        We'll pass a covered bridge from 1874 — one of two Howe-truss \
+        bridges left in Pennsylvania — and a four-story grist mill that \
+        ground grain here until 1928. Above the gorge, eastern hemlocks \
+        lean over the water; some of them are three centuries old, \
+        older than the country itself.
+        Take your time. Listen for the creek. Stop and ask me about \
+        anything you see along the way — a tree, a rock, a bird call. \
+        I'll be right here when you're ready.
+        """
     )
 
     static let hellsHollow = Trail(
@@ -189,7 +221,17 @@ enum TrailData {
             "0.4 mi · about 11 minutes",
             "0.3 mi · back to trailhead"
         ],
-        stopProgressPositions: [0.18, 0.50, 0.82]
+        stopProgressPositions: [0.18, 0.50, 0.82],
+        intro: """
+        Welcome to Hells Hollow. This is a short, easy loop on the \
+        north end of McConnells Mill State Park — about a mile and a \
+        quarter, fifty minutes round trip. The trail drops a hundred \
+        and fifty feet over half a mile, then levels out at a limestone \
+        waterfall. The descent is shaded by eastern hemlock and great \
+        rhododendron the whole way down — stay close to the railings, \
+        the steps stay damp year-round. Once we reach the falls, \
+        listen. The sound is what this place is known for.
+        """
     )
 
     static let tranquil = Trail(
@@ -198,7 +240,7 @@ enum TrailData {
         region: "Frick Park",
         parkLocation: "Frick Park",
         distanceMiles: 1.5,
-        durationMinutes: 15,
+        durationMinutes: 45,
         difficulty: "Easy",
         stopCount: 4,
         bytes: 52 * 1_024 * 1_024,
@@ -255,7 +297,19 @@ enum TrailData {
             "0.4 mi · about 4 minutes",
             "0.3 mi · back to start"
         ],
-        stopProgressPositions: [0.12, 0.38, 0.62, 0.88]
+        stopProgressPositions: [0.12, 0.38, 0.62, 0.88],
+        intro: """
+        Welcome to the Tranquil Trail in Pittsburgh's Frick Park. \
+        This is one of the gentlest walks in the city — a mile and a \
+        half, rated easy, about forty-five minutes at a comfortable \
+        pace. The trail follows an old streetcar grade through a \
+        hardwood forest of oak, beech, and tulip poplar. Some of these \
+        trees are over a hundred years old. The path runs alongside \
+        Nine Mile Run, a stream that was buried under industrial slag \
+        for most of the twentieth century and brought back to daylight \
+        in 2006. Take your time and enjoy the quiet — you're inside \
+        one of the few stretches of urban old growth left in Pennsylvania.
+        """
     )
 
     /// Order shown on the picker.

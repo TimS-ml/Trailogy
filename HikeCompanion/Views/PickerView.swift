@@ -105,75 +105,108 @@ private struct TrailCard: View {
 
     var body: some View {
         Button(action: onTap) {
-            ZStack(alignment: .bottomLeading) {
-                // Background photo
-                AsyncImage(url: trail.coverImageURL) { phase in
-                    switch phase {
-                    case .empty:
-                        AppColor.ink25
-                    case .success(let img):
-                        img.resizable().scaledToFill()
-                    case .failure:
-                        AppColor.ink25
-                    @unknown default:
-                        AppColor.ink25
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .aspectRatio(16.0/13.0, contentMode: .fill)
-                .clipped()
-
-                // Scrim
-                LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.10),
-                        Color.black.opacity(0.55),
-                        Color.black.opacity(0.88)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-
-                // Top-right badge
-                VStack {
-                    HStack {
-                        Spacer()
-                        statusBadge
-                    }
-                    Spacer()
-                }
-                .padding(14)
-
-                // Bottom text block
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(trail.region.uppercased())
-                        .font(AppFont.sans(10, .semibold))
-                        .tracking(1.6)
-                        .foregroundStyle(AppColor.ink100.opacity(0.8))
-
-                    Text(trail.name)
-                        .font(AppFont.sans(24, .bold))
-                        .foregroundStyle(AppColor.ink100)
-                        .tracking(-0.5)
-
-                    HStack(spacing: 10) {
-                        Text("\(formattedMiles) mi")
-                        circleDot
-                        Text(trail.difficulty)
-                        circleDot
-                        Text("\(trail.durationMinutes) min")
-                    }
-                    .font(AppFont.sans(13, .medium))
-                    .foregroundStyle(AppColor.ink100.opacity(0.88))
-                    .padding(.top, 4)
-                }
-                .padding(18)
+            // Picture-on-top + text-panel-below.
+            //
+            // Why this shape (vs the previous overlay-with-scrim):
+            //   - The image's native aspect (most Wikimedia hike photos
+            //     are landscape ~3:2) doesn't match the old 16:13 card,
+            //     so .scaledToFill cropped unpredictably and the bottom
+            //     of the photo (and the text overlaid on it) was getting
+            //     visually swallowed.
+            //   - A dedicated text panel guarantees the region / trail
+            //     name / stats line are always readable regardless of
+            //     how the photo crops.
+            //   - Layout is now deterministic per row: the image area
+            //     is exactly 16:9 of the card width, the text panel sits
+            //     beneath at its intrinsic content height.
+            VStack(spacing: 0) {
+                photoArea
+                textPanel
             }
             .frame(maxWidth: .infinity)
-            .aspectRatio(16.0/13.0, contentMode: .fit)
+            .background(AppColor.ink25)
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
         .buttonStyle(CardPressStyle())
+    }
+
+    /// Top of the card — the trail's cover photo at a 16:9 landscape
+    /// aspect (matches typical Wikimedia hike photos so the crop is
+    /// minimal). Status badge floats top-right.
+    private var photoArea: some View {
+        AsyncImage(url: trail.coverImageURL) { phase in
+            switch phase {
+            case .empty:
+                AppColor.ink25
+            case .success(let img):
+                img.resizable().scaledToFill()
+            case .failure:
+                AppColor.ink25
+            @unknown default:
+                AppColor.ink25
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .aspectRatio(16.0/9.0, contentMode: .fill)
+        .clipped()
+        .overlay(alignment: .topTrailing) {
+            statusBadge
+                .padding(14)
+        }
+    }
+
+    /// Bottom of the card — solid dark text panel with region eyebrow,
+    /// trail name, and the length / difficulty / time stats row.
+    private var textPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(trail.region.uppercased())
+                .font(AppFont.sans(10, .semibold))
+                .tracking(1.6)
+                .foregroundStyle(AppColor.ink60)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            Text(trail.name)
+                .font(AppFont.sans(24, .bold))
+                .foregroundStyle(AppColor.ink100)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 10) {
+                Text("\(formattedMiles) mi")
+                circleDot
+                Text(trail.difficulty)
+                circleDot
+                Text(durationLabel)
+            }
+            .font(AppFont.sans(13, .medium))
+            .foregroundStyle(AppColor.ink80)
+            .padding(.top, 2)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            // Slightly lifted from the page background so the panel
+            // reads as a distinct surface under the photo.
+            Color(red: 0.078, green: 0.082, blue: 0.071)  // ~ #14150f
+        )
+    }
+
+    /// "60 min" or "1 hr" or "1 hr 15 min" — friendlier than always
+    /// rendering minutes when the trail is over an hour.
+    private var durationLabel: String {
+        let m = trail.durationMinutes
+        if m >= 60 {
+            let h = m / 60
+            let r = m % 60
+            return r == 0 ? "\(h) hr" : "\(h) hr \(r) min"
+        }
+        return "\(m) min"
     }
 
     private var formattedMiles: String {

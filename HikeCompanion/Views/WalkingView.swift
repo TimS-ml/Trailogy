@@ -37,10 +37,7 @@ struct WalkingView: View {
 
     @State private var phase: TourPhase = .atStop
     @State private var stopIdx: Int = 0
-    @State private var lyricIdx: Int = 0
-    @State private var lyricFading: Bool = false
     @State private var phaseTimer: Timer?
-    @State private var lyricTimer: Timer?
     @State private var isPaused: Bool = false
 
     // MARK: - Q&A overlay state
@@ -67,6 +64,33 @@ struct WalkingView: View {
     @State private var toastMessage: String? = nil
     @State private var toastTask: Task<Void, Never>? = nil
 
+    // MARK: - Narration state (tour-guide TTS)
+
+    /// What kind of speech is currently being routed through Kokoro.
+    /// We need to know the difference because they're visually distinct:
+    ///   .narration → ambient tour-guide text in the background/lyric area
+    ///   .answer    → "Companion" reply in the foreground
+    enum SpeechKind { case none, narration, answer }
+    @State private var currentlySpeaking: SpeechKind = .none
+
+    /// The full text Kokoro is currently narrating, OR the unspoken remainder
+    /// after a previous interruption. Nil = no narration in flight.
+    @State private var narrationFullText: String? = nil
+    /// Snapshot of `tts.currentCaption` at the moment the user interrupted.
+    /// Used to compute the unspoken remainder so we can resume from there.
+    @State private var narrationDelivered: String = ""
+    /// True between an interrupt-by-question and the resume-after-answer.
+    @State private var narrationPaused: Bool = false
+    /// The next stop's narration is queued (we'll start it after the
+    /// current one finishes naturally). Avoids races with phase timers.
+    @State private var pendingNarration: String? = nil
+
+    /// Soft placeholder shown in the lyric area during the 1–2 s window
+    /// between a `speakNarration(...)` call and Kokoro's first audio
+    /// frame. Without this the user sees an empty lyric area at start,
+    /// which feels like the app froze.
+    @State private var narrationPreamble: String = ""
+
     // MARK: - Constants
 
     /// Phase durations in the demo. Real GPS would replace these.
@@ -92,13 +116,26 @@ struct WalkingView: View {
             guard !trail.stops.isEmpty else { return }
             startTourCycle()
         }
-        .onDisappear { stopTourCycle(); stopLyricLoop() }
+        .onDisappear {
+            stopTourCycle()
+            tts.stop()  // halt any in-flight narration when leaving the view
+        }
+        // When Kokoro stops speaking, decide whether the tour narration
+        // ended naturally (good — clear state and resume the phase timer)
+        // or was interrupted (handled by interruptNarrationForQuestion).
+        .onChange(of: tts.isSpeaking) { _, isSpeaking in
+            if !isSpeaking {
+                handleSpeakingFinished()
+            }
+        }
         .animation(.easeInOut(duration: 0.4), value: phase)
         .animation(.easeInOut(duration: 0.35), value: isHolding)
         .animation(.easeInOut(duration: 0.35), value: showPhotoContext)
         .animation(.easeInOut(duration: 0.3), value: toastMessage != nil)
         .animation(.easeInOut(duration: 0.3), value: isPaused)
         .animation(.easeInOut(duration: 0.22), value: showMoreSheet)
+        .animation(.easeInOut(duration: 0.3), value: tts.isSpeaking)
+        .animation(.easeInOut(duration: 0.3), value: currentlySpeaking)
     }
 
     private var emptyTrailFallback: some View {
@@ -389,68 +426,210 @@ struct WalkingView: View {
 
     // MARK: - Center content
 
+    /// Display rules:
+    ///   • Companion ANSWER (foreground, lime "Companion" eyebrow):
+    ///       - shown whenever Gemma is generating an answer, or while
+    ///         Kokoro is speaking that answer back
+    ///       - takes priority over the background narration lane
+    ///   • Tour NARRATION (background, lyric position):
+    ///       - while Kokoro is reading trail-guide content, the live
+    ///         caption builds word-by-word in the lyric area
+    ///       - when nothing is being narrated, falls back to the silent
+    ///         auto-rotating lyric stack at .atStop, or the quiet
+    ///         indicator between stops
+    ///
+    /// We never show both lanes' content simultaneously — the foreground
+    /// answer lane visually takes over when active.
+    /// Two-lane display, no third type:
+    ///   • Companion's reply (foreground) — Gemma generating an answer
+    ///     OR Kokoro speaking that answer back. Lime "Companion"
+    ///     eyebrow above the live text.
+    ///   • Lyrics (background) — Kokoro narrating tour-guide content.
+    ///     Live caption builds word-by-word in sync with the audio.
+    ///
+    /// When neither is in flight (silent gap between narrations, or
+    /// between/approaching phase), the center is intentionally empty —
+    /// there is no static placeholder text. The walking view's progress
+    /// bar and bottom controls give the user something to look at, and
+    /// the next narration will fill the lyric area when it arrives.
     @ViewBuilder
     private var centerContent: some View {
-        if isAnswering || !answerText.isEmpty {
-            // Active answer — Gemma's response replaces the lyric
-            VStack(spacing: 14) {
-                Text("Companion")
-                    .eyebrowStyle(AppColor.lime)
-                Text(answerText.isEmpty ? "…" : answerText)
-                    .font(AppFont.sans(22, .semibold))
-                    .foregroundStyle(AppColor.ink100)
-                    .tracking(-0.3)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(8)
-                    .lineSpacing(4)
-            }
-            .padding(.horizontal, 28)
-            .padding(.top, 256)
-            .frame(maxWidth: .infinity, alignment: .top)
-            .opacity(isHolding ? 0.05 : 1.0)
-        } else if phase == .atStop {
-            // Lyric (auto-rotating narration sentences)
-            lyricStack
-                .padding(.horizontal, 28)
-                .padding(.top, 256)
-                .frame(maxWidth: .infinity, alignment: .top)
+        if showAnswerLane {
+            // FOREGROUND — Companion reply (Q&A)
+            answerLaneView
                 .opacity(isHolding ? 0.05 : 1.0)
-        } else {
+        } else if currentlySpeaking == .narration {
+            // BACKGROUND — Lyrics (what Kokoro is narrating).
+            // Rendered as soon as narration is queued, even if the
+            // caption is briefly empty during the 1–2 s model-load
+            // window — that empty space is fine; better than flashing
+            // unrelated text.
+            narrationLaneView(text: tts.currentCaption)
+                .opacity(isHolding ? 0.05 : 1.0)
+        } else if phase != .atStop {
             // Between / approaching — center quiet indicator
+            // (this is the small "Walking to … 0.4 mi" stop indicator;
+            //  not text, just the next-stop label, so it doesn't conflict
+            //  with the two-lane rule).
             quietIndicator
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .opacity(isHolding ? 0.0 : 1.0)
         }
+        // else: at-stop with nothing speaking → empty by design.
     }
 
-    private var lyricStack: some View {
-        VStack(spacing: 14) {
-            Text(lyricSentence(offset: -1))
-                .font(AppFont.sans(17, .medium))
-                .foregroundStyle(AppColor.ink100)
-                .opacity(isHolding ? 0.05 : 0.28)
-                .lineSpacing(2)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
+    /// True while a Q&A reply should occupy the foreground lane:
+    /// either Gemma is generating, the answer text is streaming in, or
+    /// Kokoro is speaking the finished answer back.
+    private var showAnswerLane: Bool {
+        if isAnswering { return true }
+        if !answerText.isEmpty { return true }
+        if currentlySpeaking == .answer { return true }
+        return false
+    }
 
-            Text(lyricSentence(offset: 0))
-                .font(AppFont.sans(24, .semibold))
-                .foregroundStyle(AppColor.ink100)
-                .tracking(-0.4)
-                .multilineTextAlignment(.center)
-                .lineSpacing(4)
-                .lineLimit(3)
-                .opacity(lyricFading ? 0.05 : (isHolding ? 0.08 : 1.0))
-                .animation(.easeInOut(duration: 0.6), value: lyricFading)
-                .animation(.easeInOut(duration: 0.35), value: lyricIdx)
+    /// FOREGROUND: companion reply.
+    ///
+    /// Display rule: prefer the full streamed `answerText` (Gemma's
+    /// finished response) and KEEP it on screen while Kokoro speaks.
+    /// We don't switch to the live caption mid-answer because that
+    /// produced a confusing "rewind" effect — the user already read the
+    /// full answer once during streaming; rebuilding it word-by-word
+    /// from "Welcome…" while Kokoro is reading makes the screen feel
+    /// like it's stuttering.
+    ///
+    /// While Gemma is still streaming and `answerText` is empty, fall
+    /// back to ellipsis. Rolling-windowed so a long answer never grows
+    /// past ~4 lines.
+    /// FOREGROUND: companion reply. Same auto-scrolling-ScrollView
+    /// approach as `narrationLaneView` — see its docs for why we don't
+    /// use lineLimit + truncationMode here.
+    private var answerLaneView: some View {
+        let displayText: String = answerText.isEmpty ? "…" : answerText
+        let eyebrow = (isAnswering && currentlySpeaking != .answer)
+            ? "Companion · thinking"
+            : "Companion"
+        let answerAnchor = captionAnchorID + ".answer"
 
-            Text(lyricSentence(offset: 1))
-                .font(AppFont.sans(17, .medium))
-                .foregroundStyle(AppColor.ink100)
-                .opacity(isHolding ? 0.03 : 0.14)
-                .lineSpacing(2)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
+        return VStack(spacing: 14) {
+            Text(eyebrow)
+                .eyebrowStyle(AppColor.lime)
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    Text(displayText)
+                        .font(AppFont.sans(22, .semibold))
+                        .foregroundStyle(AppColor.ink100)
+                        .tracking(-0.3)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(4)
+                        .padding(.horizontal, 28)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .id(answerAnchor)
+                }
+                .scrollDisabled(true)
+                .frame(maxWidth: .infinity)
+                // 320pt scroll + 12pt eyebrow + 14pt spacing = 346pt
+                // VStack content. From padding-top 240 → bottom y=586.
+                .frame(height: 320)
+                .onChange(of: displayText) { _, _ in
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(20))
+                        withAnimation(.linear(duration: 0.12)) {
+                            proxy.scrollTo(answerAnchor, anchor: .bottom)
+                        }
+                    }
+                }
+                .onAppear {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(20))
+                        proxy.scrollTo(answerAnchor, anchor: .bottom)
+                    }
+                }
+            }
+        }
+        .padding(.top, 240)
+        // Pin to ZStack top edge — see narrationLaneView for why this
+        // matters (default ZStack alignment would center-stack and
+        // push the lyric bottom into the mic button).
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// BACKGROUND: tour narration caption.
+    ///
+    /// Implemented as an auto-scrolling ScrollView, NOT a Text with
+    /// lineLimit. Reason: SwiftUI's `Text(...).lineLimit(N)
+    /// .truncationMode(.head)` only affects WHERE the ellipsis appears
+    /// on the *last* visible line — it doesn't pick which N lines of
+    /// the content actually render. So with long captions (e.g. the
+    /// intro), the FIRST N-1 lines render normally and only the last
+    /// one truncates; newer content past line N never appears. Net
+    /// effect: oldest lines freeze at the top.
+    ///
+    /// The ScrollView fix:
+    ///   • Renders the full caption inside a fixed-height scroll area.
+    ///   • `ScrollViewReader` lets us programmatically scroll to the
+    ///     bottom on every caption change, so the newest line is
+    ///     always visible at the bottom of the lyric area.
+    ///   • Older content stays in the (unseen) scroll buffer above —
+    ///     looks visually like text scrolling up as new lines arrive.
+    ///   • `scrollDisabled(true)` keeps the user from manually
+    ///     scrolling and fighting the auto-scroll. (We can revisit
+    ///     this if there's demand to scroll back through history.)
+    private func narrationLaneView(text: String) -> some View {
+        let displayText: String = text.isEmpty ? narrationPreamble : text
+        let isPreamble = text.isEmpty && !narrationPreamble.isEmpty
+
+        return ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                Text(displayText)
+                    .font(AppFont.sans(24, .semibold))
+                    .foregroundStyle(AppColor.ink100)
+                    .tracking(-0.4)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+                    .opacity(isPreamble ? 0.55 : 0.85)
+                    .padding(.horizontal, 28)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .id(captionAnchorID)
+            }
+            .scrollDisabled(true)
+            .frame(maxWidth: .infinity)
+            .frame(height: 360)
+            // 240 = 226 (hero card bottom) + 14 visual margin. The
+            // hero card has a soft drop shadow that extends ~28pt
+            // below its rect; 14pt of clean margin keeps the lyric
+            // top from butting against it. Lyric bottom lands at
+            // 240+360 = 600, comfortably above the mic-button shadow
+            // upper edge at ~654.
+            .padding(.top, 240)
+            // Pin the lane to the ZStack's top edge so the padding
+            // measurement actually anchors to y=0 (default ZStack
+            // alignment is .center, which would float the whole block
+            // down ~110pt and shove the bottom into the mic button).
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .onChange(of: displayText) { _, _ in
+                pinScrollToBottom(proxy)
+            }
+            .onAppear {
+                pinScrollToBottom(proxy)
+            }
+        }
+    }
+
+    /// ID we attach to the caption text so `ScrollViewProxy.scrollTo`
+    /// can reach it. Unique-by-instance so it stays stable across renders.
+    private var captionAnchorID: String { "lyric-caption-anchor" }
+
+    /// Scroll the lyric / answer lane such that the bottom edge of the
+    /// caption text aligns with the bottom of the visible scroll area.
+    /// Bounced through the next runloop turn so SwiftUI has a chance
+    /// to lay out the new (longer) text before we ask for its bottom.
+    private func pinScrollToBottom(_ proxy: ScrollViewProxy) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(20))
+            withAnimation(.linear(duration: 0.12)) {
+                proxy.scrollTo(captionAnchorID, anchor: .bottom)
+            }
         }
     }
 
@@ -781,8 +960,9 @@ struct WalkingView: View {
     // MARK: - Actions
 
     private func startHold() {
-        // Cancel any auto-rotation while user is asking.
-        stopLyricLoop()
+        // Interrupt any ongoing tour-guide narration and capture how
+        // far it got so we can resume the unspoken remainder later.
+        interruptNarrationForQuestion()
         isHolding = true
         do {
             try speech.startRecording()
@@ -800,9 +980,9 @@ struct WalkingView: View {
             try? await Task.sleep(for: .milliseconds(600))
             let text = speech.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else {
-                // Resume narration if nothing captured
+                // Nothing captured — resume the paused narration if any.
                 await MainActor.run {
-                    if !isPaused, phase == .atStop, !isAnswering { startLyricLoop() }
+                    if narrationPaused { resumeNarrationIfNeeded() }
                 }
                 return
             }
@@ -859,19 +1039,27 @@ struct WalkingView: View {
                 // Free Gemma between turns (per CLAUDE.md / commit e681ee2).
                 gemma.unload()
 
-                // Speak the response.
+                // Speak the response. Mark this synth as an .answer so
+                // the UI shows it in the foreground "Companion" lane,
+                // distinct from the ambient .narration lane. We wait for
+                // Kokoro to finish playing before resuming any paused
+                // tour narration — otherwise the bridge phrase ("Let me
+                // continue my explanation.") would step on the answer.
                 if !fullText.isEmpty {
+                    await MainActor.run { currentlySpeaking = .answer }
                     tts.synthesize(text: fullText, speed: 1.0)
+                    await waitForTTSPlaybackToFinish()
                 }
-                isAnswering = false
-
-                // Hold the answer on screen for a few seconds, then return
-                // to the auto-rotating narration. Long enough for the user
-                // to read; short enough that the screen doesn't feel stuck.
-                try? await Task.sleep(for: .seconds(8))
                 await MainActor.run {
                     answerText = ""
-                    if !isPaused, phase == .atStop { startLyricLoop() }
+                    isAnswering = false
+
+                    // If a tour narration was paused for this question,
+                    // resume it from the unspoken remainder with a
+                    // bridge phrase. Otherwise just let the phase timer
+                    // pick back up — there's no static fallback text.
+                    if narrationPaused { resumeNarrationIfNeeded() }
+                    scheduleNextPhase()
                 }
             } catch {
                 await MainActor.run {
@@ -881,8 +1069,43 @@ struct WalkingView: View {
                     showPhotoContext = false
                     capturedImage = nil
                     isAnswering = false
+                    // Try to resume narration even on error so the user
+                    // doesn't end up stuck silent.
+                    if narrationPaused { resumeNarrationIfNeeded() }
+                    scheduleNextPhase()
                 }
             }
+        }
+    }
+
+    /// Wait for Kokoro to FULLY play the current synthesis. Implemented
+    /// in two phases because right after `tts.synthesize()` is called,
+    /// `tts.isSpeaking` is still `false` (model is loading, no audio
+    /// yet). A naive `while isSpeaking` would exit instantly and the
+    /// caller would clear the on-screen answer text BEFORE Kokoro had
+    /// even started speaking — the "flash answer, disappear, reappear
+    /// when Kokoro reads" bug.
+    ///
+    /// Phase 1: wait until `isSpeaking` becomes `true` (Kokoro started),
+    ///          capped at 5 s. If it never starts, synth probably
+    ///          failed silently — bail.
+    /// Phase 2: wait until `isSpeaking` becomes `false` (Kokoro done),
+    ///          capped at 90 s.
+    @MainActor
+    private func waitForTTSPlaybackToFinish() async {
+        // Phase 1 — wait for audio to actually start.
+        let startDeadline = Date().addingTimeInterval(5)
+        while !tts.isSpeaking, Date() < startDeadline {
+            try? await Task.sleep(for: .milliseconds(80))
+        }
+        guard tts.isSpeaking else {
+            // Synth never produced audio — error path. Don't block.
+            return
+        }
+        // Phase 2 — wait for audio to finish.
+        let finishDeadline = Date().addingTimeInterval(90)
+        while tts.isSpeaking, Date() < finishDeadline {
+            try? await Task.sleep(for: .milliseconds(120))
         }
     }
 
@@ -918,19 +1141,33 @@ struct WalkingView: View {
         isPaused.toggle()
         if isPaused {
             stopTourCycle()
-            stopLyricLoop()
+            tts.stop()                 // halt any in-flight narration
+            if narrationFullText != nil, !narrationPaused {
+                // Treat a pause-during-narration like a question-driven
+                // pause so resume-with-bridge fires when the user unpauses.
+                narrationDelivered = tts.currentCaption
+                narrationPaused = true
+            }
         } else {
+            // Resume order: if we have a paused narration, restart it
+            // first (sets currentlySpeaking = .narration). Then schedule
+            // the phase timer; it will short-circuit if narration is
+            // still active and pick up automatically when narration ends.
+            if narrationPaused { resumeNarrationIfNeeded() }
             scheduleNextPhase()
-            if phase == .atStop { startLyricLoop() }
         }
     }
 
     private func endTour() {
         stopTourCycle()
-        stopLyricLoop()
+        tts.stop()
         gemma.reset()              // wipe conversation history at end of tour
         capturedImage = nil        // drop any captured photo
         showPhotoContext = false
+        narrationFullText = nil
+        narrationDelivered = ""
+        narrationPaused = false
+        currentlySpeaking = .none
         router.endTour()
     }
 
@@ -939,8 +1176,12 @@ struct WalkingView: View {
     private func startTourCycle() {
         stopIdx = 0
         phase = .atStop
-        lyricIdx = 0
-        startLyricLoop()
+        // Speak the trail intro on Begin. Phase timer is paused while
+        // narration plays — see scheduleNextPhase.
+        speakNarration(
+            trail.intro,
+            preamble: "Let's step into the trail. Take a breath…"
+        )
         scheduleNextPhase()
     }
 
@@ -949,8 +1190,15 @@ struct WalkingView: View {
         phaseTimer = nil
     }
 
+    /// Schedule the next phase advance. Pauses if narration or a Q&A
+    /// answer is in flight — we don't want to ramp through stops while
+    /// the user is hearing/being answered something.
     private func scheduleNextPhase() {
         phaseTimer?.invalidate()
+        if isPaused { return }
+        if narrationActive { return }   // wait for narration to finish
+        if isAnswering { return }        // wait for answer to play out
+
         let delay: Double = {
             switch phase {
             case .atStop:       return atStopSeconds
@@ -970,45 +1218,157 @@ struct WalkingView: View {
         switch phase {
         case .atStop:
             phase = .between
-            stopLyricLoop()
         case .between:
             phase = .approaching
         case .approaching:
             stopIdx = (stopIdx + 1) % trail.stops.count
             phase = .atStop
-            lyricIdx = 0
-            if !isAnswering { startLyricLoop() }
+            // Auto-narrate the stop's content on arrival. The lyric
+            // (= what Kokoro is saying) is the only at-stop text.
+            speakNarration(
+                currentStop.spokenNarration,
+                preamble: "Arriving at \(currentStop.name)…"
+            )
         }
         scheduleNextPhase()
     }
 
-    // MARK: - Lyric auto-rotate
+    /// True while we have an active narration or one paused mid-flight.
+    private var narrationActive: Bool {
+        narrationFullText != nil || tts.isSpeaking
+    }
 
-    private func startLyricLoop() {
-        stopLyricLoop()
-        guard phase == .atStop, !isAnswering else { return }
-        lyricTimer = Timer.scheduledTimer(withTimeInterval: 4.5, repeats: true) { _ in
-            Task { @MainActor in
-                lyricFading = true
-                try? await Task.sleep(for: .milliseconds(600))
-                lyricIdx = (lyricIdx + 1) % max(1, currentStop.sentences.count)
-                lyricFading = false
-            }
+    // MARK: - Narration: speak / interrupt / resume
+
+    /// Begin speaking `text` through Kokoro. Records `text` so we can
+    /// resume from a captured cut-off point if interrupted by a question.
+    /// `preamble` is shown faintly in the lyric area during the load
+    /// window before Kokoro's first audio frame arrives — keeps the
+    /// screen from looking frozen at the start of the tour.
+    private func speakNarration(_ text: String, preamble: String = "Setting the scene…") {
+        guard !text.isEmpty else { return }
+        narrationFullText = text
+        narrationDelivered = ""
+        narrationPaused = false
+        narrationPreamble = preamble
+        currentlySpeaking = .narration
+        tts.synthesize(text: text, speed: 1.0)
+    }
+
+    /// User is starting to ask a question. If a narration is currently
+    /// playing, capture how much got delivered (so we can resume the
+    /// remainder) and halt the audio.
+    private func interruptNarrationForQuestion() {
+        guard tts.isSpeaking, narrationFullText != nil else { return }
+        narrationDelivered = tts.currentCaption
+        narrationPaused = true
+        currentlySpeaking = .none
+        tts.stop()
+    }
+
+    /// After a Q&A turn finishes (Gemma + Kokoro both done), if a
+    /// narration was paused, resume it from the unspoken remainder.
+    /// Prepends a short bridge phrase so the user knows we're picking
+    /// up where we left off, not starting over.
+    private func resumeNarrationIfNeeded() {
+        guard narrationPaused, let full = narrationFullText else { return }
+        let remaining = remainingNarrationText(full: full, delivered: narrationDelivered)
+        narrationPaused = false
+        narrationDelivered = ""
+        guard !remaining.isEmpty else {
+            narrationFullText = nil
+            return
         }
+        let bridged = "Let me continue my explanation. " + remaining
+        narrationFullText = remaining   // resume reference for further interrupts
+        narrationPreamble = "Continuing…"
+        currentlySpeaking = .narration
+        tts.synthesize(text: bridged, speed: 1.0)
     }
 
-    private func stopLyricLoop() {
-        lyricTimer?.invalidate()
-        lyricTimer = nil
-        lyricFading = false
+    /// Trim a long caption so the lyric area shows the most recent
+    /// content. Eviction is **sentence-based** rather than per-character:
+    /// we always show the last `maxSentences` complete sentences plus
+    /// any partial in-flight sentence. When a new sentence starts past
+    /// that budget, the oldest sentence drops in one clean step.
+    ///
+    /// Why not per-character: trimming one word off the front every
+    /// time a new word arrives makes the display look like it's
+    /// "creeping" leftward, which is jarring. Sentence boundaries are
+    /// natural pause points in the narration, so dropping a whole
+    /// sentence there reads as a clean scroll.
+    private func rollingCaption(_ full: String, maxSentences: Int = 3) -> String {
+        guard !full.isEmpty else { return full }
+        let sentences = Self.splitIntoSentences(full)
+        if sentences.count <= maxSentences { return full }
+        return sentences.suffix(maxSentences).joined(separator: " ")
     }
 
-    private func lyricSentence(offset: Int) -> String {
-        let s = currentStop.sentences
-        guard !s.isEmpty else { return "" }
-        let n = s.count
-        let i = ((lyricIdx + offset) % n + n) % n
-        return s[i]
+    /// Split a string at sentence-ending punctuation (`. ! ?`) followed
+    /// by whitespace. Trailing partial (no terminator yet) is included
+    /// as the last entry so we can show a sentence in the process of
+    /// being read aloud.
+    private static func splitIntoSentences(_ text: String) -> [String] {
+        var sentences: [String] = []
+        var current = ""
+        let chars = Array(text)
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            current.append(c)
+            if c == "." || c == "!" || c == "?",
+               i + 1 < chars.count,
+               chars[i + 1].isWhitespace {
+                let s = current.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !s.isEmpty { sentences.append(s) }
+                current = ""
+            }
+            i += 1
+        }
+        let tail = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tail.isEmpty { sentences.append(tail) }
+        return sentences
+    }
+
+    /// Try to find where in `full` the delivered caption left off, and
+    /// return everything after it. Falls back to the full text if we
+    /// can't find a clean boundary (better to re-narrate than to skip).
+    private func remainingNarrationText(full: String, delivered: String) -> String {
+        let trimmed = delivered.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return full }
+        // Caption tokens may not match `full`'s whitespace exactly.
+        // Match on the last ~30 chars of delivered to find our place.
+        let needle = String(trimmed.suffix(30))
+        if let r = full.range(of: needle) {
+            let tail = String(full[r.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            return tail
+        }
+        // No clean match — re-narrate from the top.
+        return full
+    }
+
+    /// Watcher: when `tts.isSpeaking` flips false, decide what just
+    /// finished and clean up.
+    ///
+    /// .narration ending naturally → clear narration state, restart phase
+    /// .answer ending → runAsk's own flow handles bridge/resume; we just
+    ///   reset `currentlySpeaking` here. (Don't touch narration state.)
+    /// .narration was interrupted (narrationPaused) → don't clear; the
+    ///   resume path will re-set .narration when Kokoro starts again.
+    private func handleSpeakingFinished() {
+        switch currentlySpeaking {
+        case .answer:
+            currentlySpeaking = .none
+        case .narration:
+            currentlySpeaking = .none
+            if !narrationPaused, narrationFullText != nil {
+                narrationFullText = nil
+                narrationDelivered = ""
+                scheduleNextPhase()
+            }
+        case .none:
+            break
+        }
     }
 
     // MARK: - Helpers
