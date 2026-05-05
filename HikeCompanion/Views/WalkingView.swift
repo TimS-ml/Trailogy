@@ -1078,34 +1078,41 @@ struct WalkingView: View {
         }
     }
 
-    /// Wait for Kokoro to FULLY play the current synthesis. Implemented
-    /// in two phases because right after `tts.synthesize()` is called,
-    /// `tts.isSpeaking` is still `false` (model is loading, no audio
-    /// yet). A naive `while isSpeaking` would exit instantly and the
-    /// caller would clear the on-screen answer text BEFORE Kokoro had
-    /// even started speaking — the "flash answer, disappear, reappear
-    /// when Kokoro reads" bug.
+    /// Wait for Kokoro to FULLY play the current synthesis.
     ///
-    /// Phase 1: wait until `isSpeaking` becomes `true` (Kokoro started),
-    ///          capped at 5 s. If it never starts, synth probably
-    ///          failed silently — bail.
-    /// Phase 2: wait until `isSpeaking` becomes `false` (Kokoro done),
-    ///          capped at 90 s.
+    /// Two phases because `tts.synthesize` is fire-and-forget — work
+    /// happens on a background serial queue, so right after the call
+    /// returns `isSpeaking` is still false (no audio yet). A naive
+    /// `while isSpeaking` would exit instantly and the caller would
+    /// clear the on-screen answer text BEFORE Kokoro had even started
+    /// speaking — the "flash answer, disappear, reappear when Kokoro
+    /// reads" bug.
+    ///
+    /// **No timeouts.** We trust the state machine in ValidationRunner:
+    ///   • Phase 1 ends when isSpeaking flips true (first PCM buffer
+    ///     scheduled), OR when isRunning flips false without that ever
+    ///     happening — i.e. synth aborted/errored before producing any
+    ///     audio.
+    ///   • Phase 2 ends when isSpeaking flips false. That is guaranteed
+    ///     to happen via one of three paths in ValidationRunner:
+    ///       1. `dataPlayedBack` callback on the last scheduled buffer
+    ///          (normal completion)
+    ///       2. `stop()` called from elsewhere (user interrupt)
+    ///       3. the synth-error catch block (mid-stream failure)
+    ///     If none of those fire we have a real bug, and a timeout
+    ///     would just paper over it by silently clearing the answer.
     @MainActor
     private func waitForTTSPlaybackToFinish() async {
-        // Phase 1 — wait for audio to actually start.
-        let startDeadline = Date().addingTimeInterval(5)
-        while !tts.isSpeaking, Date() < startDeadline {
-            try? await Task.sleep(for: .milliseconds(80))
+        // Phase 1 — wait for audio to actually start, or for synth to
+        // abort before it could.
+        while !tts.isSpeaking, tts.isRunning {
+            try? await Task.sleep(for: .milliseconds(50))
         }
-        guard tts.isSpeaking else {
-            // Synth never produced audio — error path. Don't block.
-            return
-        }
+        guard tts.isSpeaking else { return }
+
         // Phase 2 — wait for audio to finish.
-        let finishDeadline = Date().addingTimeInterval(90)
-        while tts.isSpeaking, Date() < finishDeadline {
-            try? await Task.sleep(for: .milliseconds(120))
+        while tts.isSpeaking {
+            try? await Task.sleep(for: .milliseconds(100))
         }
     }
 

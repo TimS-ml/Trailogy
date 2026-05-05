@@ -153,6 +153,19 @@ final class ValidationRunner: ObservableObject {
 
     // MARK: - Synthesize
 
+    /// Synthesize and play `text` through Kokoro.
+    ///
+    /// **Streaming** — each chunk's audio buffer is scheduled on the
+    /// player as soon as that chunk finishes synthesizing, instead of
+    /// waiting for ALL chunks to be synthesized first. For a long
+    /// intro paragraph this drops perceived start latency from ~5–10 s
+    /// (synth-all-then-play) to ~1–2 s (synth-first-then-play, queue
+    /// the rest as they arrive).
+    ///
+    /// Per-chunk caption tokens are appended to `captionTokens` on
+    /// the main queue with their global-time offsets pre-applied, so
+    /// the live caption (`currentCaption`) keeps growing in sync with
+    /// audio across chunk boundaries.
     func synthesize(text: String, speed: Float = 1.0) {
         guard isReady, !isRunning else { return }
         let voiceKey = selectedVoice
@@ -163,20 +176,43 @@ final class ValidationRunner: ObservableObject {
             return
         }
 
-        DispatchQueue.main.async {
+        // Normalize problematic punctuation BEFORE chunking so dashes
+        // / smart quotes / ellipses don't reach the G2P layer.
+        let normalized = Self.normalizeForSynthesis(text)
+        let chunks = Self.splitForSynthesis(normalized)
+        guard !chunks.isEmpty else { return }
+
+        // Synchronous when called from main (the normal path) so that
+        // `isRunning = true` is observable IMMEDIATELY after this call
+        // returns. Async fallback for the rare off-main caller.
+        //
+        // This matters because callers like `runAsk` do:
+        //     tts.synthesize(text: fullText, speed: 1.0)
+        //     await waitForTTSPlaybackToFinish()
+        // both on MainActor, with no main-queue yield in between. If
+        // we wrapped this prep block in `DispatchQueue.main.async`, the
+        // wait would observe stale `isRunning == false` and return
+        // instantly — clearing the on-screen answer text before Kokoro
+        // had a chance to start speaking.
+        let prep: () -> Void = {
             self.isRunning = true
             self.stopRequested = false
             self.status = "Loading Kokoro…"
             self.currentCaption = ""
+            self.captionTokens = []
+            self.captionStartTime = nil
             self.stopCaptionTimer()
             MemoryStats.log("kokoro.synthesize start")
+        }
+        if Thread.isMainThread {
+            prep()
+        } else {
+            DispatchQueue.main.async(execute: prep)
         }
 
         workQueue.async { [weak self] in
             guard let self else { return }
             do {
-                // Lazy-load Kokoro for this synth. Adds ~1–2 s on the
-                // first chunk; reused across chunks within the same call.
                 try self.ensureModelLoaded()
                 guard let tts = self.tts else { throw RunnerError.modelMissing }
 
@@ -185,18 +221,39 @@ final class ValidationRunner: ObservableObject {
                     MemoryStats.log("kokoro.model loaded")
                 }
                 let language: Language = (voiceKey.first == "a") ? .enUS : .enGB
-                let chunks = Self.splitForSynthesis(text)
-
-                var combined: [Float] = []
-                var allCaptionTokens: [CaptionToken] = []
-                var chunkOffsetSec: Double = 0
                 let sampleRate = Double(KokoroTTS.Constants.samplingRate)
 
+                guard let engine = self.audioEngine,
+                      let player = self.playerNode,
+                      let format = AVAudioFormat(
+                        standardFormatWithSampleRate: sampleRate, channels: 1)
+                else {
+                    DispatchQueue.main.async {
+                        self.status = "Audio engine not initialised"
+                        self.isRunning = false
+                    }
+                    return
+                }
+
+                // Reset any prior playback / scheduled buffers; reconnect
+                // the player to the mixer in case format changed.
+                engine.connect(player, to: engine.mainMixerNode, format: format)
+                if !engine.isRunning {
+                    try engine.start()
+                }
+                player.stop()
+
                 let wallStart = Date().timeIntervalSince1970
+                var combined: [Float] = []          // accumulated for saveWav
+                var chunkOffsetSec: Double = 0
+                var firstChunkScheduled = false
+                let totalChunks = chunks.count
 
                 for (i, chunk) in chunks.enumerated() {
+                    if self.stopRequested { break }
+
                     DispatchQueue.main.async {
-                        self.status = "Synthesising chunk \(i+1)/\(chunks.count)…"
+                        self.status = "Synthesising chunk \(i+1)/\(totalChunks)…"
                     }
 
                     let (audio, mtokens) = try tts.generateAudio(
@@ -206,94 +263,138 @@ final class ValidationRunner: ObservableObject {
                         speed: speed
                     )
 
-                    // Per-chunk MTokens → global-time CaptionTokens
+                    if self.stopRequested { break }
+
+                    let chunkAudioDur = Double(audio.count) / sampleRate
+
+                    // Append this chunk's caption tokens with global
+                    // timestamps to the main-thread captionTokens.
+                    let myOffset = chunkOffsetSec
                     if let toks = mtokens {
-                        for t in toks {
-                            guard let s = t.start_ts, let e = t.end_ts else { continue }
-                            allCaptionTokens.append(CaptionToken(
+                        let captionAddition: [CaptionToken] = toks.compactMap { t in
+                            guard let s = t.start_ts, let e = t.end_ts else { return nil }
+                            return CaptionToken(
                                 text: t.text,
                                 whitespace: t.whitespace,
-                                startTs: chunkOffsetSec + s,
-                                endTs: chunkOffsetSec + e
-                            ))
+                                startTs: myOffset + s,
+                                endTs:   myOffset + e
+                            )
+                        }
+                        DispatchQueue.main.async {
+                            self.captionTokens.append(contentsOf: captionAddition)
                         }
                     }
 
-                    let chunkAudioDur = Double(audio.count) / sampleRate
-                    combined.append(contentsOf: audio)
-
-                    // 50 ms silence between chunks (click suppression);
-                    // bump the offset so subsequent token timestamps stay correct.
-                    if i < chunks.count - 1 {
-                        let silenceFrames = Int(sampleRate * 0.05)
-                        combined.append(contentsOf: [Float](repeating: 0, count: silenceFrames))
-                        chunkOffsetSec += chunkAudioDur + 0.05
-                    } else {
+                    // Build a PCM buffer for this chunk and schedule it.
+                    // Note: NO `.interrupts` — we want chunks to queue
+                    // back-to-back, not replace each other.
+                    guard let buf = AVAudioPCMBuffer(
+                        pcmFormat: format,
+                        frameCapacity: AVAudioFrameCount(audio.count))
+                    else {
                         chunkOffsetSec += chunkAudioDur
+                        continue
                     }
+                    buf.frameLength = buf.frameCapacity
+                    if let dst = buf.floatChannelData?[0] {
+                        audio.withUnsafeBufferPointer { src in
+                            if let base = src.baseAddress {
+                                dst.update(from: base, count: src.count)
+                            }
+                        }
+                    }
+
+                    // The completion handler on the LAST buffer flips
+                    // isSpeaking false so the lyric area knows the lane
+                    // ended. Earlier chunks have no completion handler.
+                    let isLast = (i == totalChunks - 1)
+                    if isLast {
+                        player.scheduleBuffer(
+                            buf,
+                            at: nil,
+                            options: [],
+                            completionCallbackType: .dataPlayedBack
+                        ) { [weak self] _ in
+                            DispatchQueue.main.async {
+                                self?.isSpeaking = false
+                            }
+                        }
+                    } else {
+                        player.scheduleBuffer(buf, at: nil, options: [],
+                                              completionHandler: nil)
+                    }
+
+                    if !firstChunkScheduled {
+                        firstChunkScheduled = true
+                        DispatchQueue.main.async {
+                            self.isSpeaking = true
+                            // startCaptionTimer sets captionStartTime
+                            // itself — see its docs.
+                            self.startCaptionTimer()
+                        }
+                        if !player.isPlaying { player.play() }
+                    }
+
+                    combined.append(contentsOf: audio)
+                    chunkOffsetSec += chunkAudioDur
                 }
 
+                // After all chunks scheduled, write the WAV (best-effort
+                // for the debug-screen "Replay" feature) and update
+                // status. Playback may continue from the queued buffers.
                 let wallTime = Date().timeIntervalSince1970 - wallStart
-                let audioDur = Double(combined.count) / sampleRate
+                let audioDur = chunkOffsetSec
                 let rtf = audioDur > 0 ? (wallTime / audioDur) : 0
-
-                let wavURL = try Self.saveWav(audio: combined, sampleRate: sampleRate)
-
-                let result = RunResult(
-                    text: text,
-                    voice: voiceKey,
-                    speed: speed,
-                    wallTimeSec: wallTime,
-                    audioDurationSec: audioDur,
-                    rtf: rtf,
-                    wavURL: wavURL,
-                    chunkCount: chunks.count
-                )
+                let wavURL = (try? Self.saveWav(audio: combined, sampleRate: sampleRate))
 
                 DispatchQueue.main.async {
-                    self.lastResult = result
-                    self.lastWavURL = wavURL
-                    let chunkSuffix = chunks.count > 1 ? "  (\(chunks.count) chunks)" : ""
+                    if let wavURL { self.lastWavURL = wavURL }
+                    self.lastResult = RunResult(
+                        text: text,
+                        voice: voiceKey,
+                        speed: speed,
+                        wallTimeSec: wallTime,
+                        audioDurationSec: audioDur,
+                        rtf: rtf,
+                        wavURL: wavURL ?? URL(fileURLWithPath: "/dev/null"),
+                        chunkCount: totalChunks
+                    )
                     self.status = String(
-                        format: "RTF %.3f  (%.1f× realtime)  audio %.2f s  wall %.2f s%@",
-                        rtf, rtf > 0 ? 1.0 / rtf : 0, audioDur, wallTime, chunkSuffix
+                        format: "RTF %.3f  audio %.2f s  wall %.2f s  (%d chunks)",
+                        rtf, audioDur, wallTime, totalChunks
                     )
                     self.isRunning = false
                     MemoryStats.log("kokoro.synthesize done")
                 }
-
-                self.captionTokens = allCaptionTokens
-                self.play(audio: combined, sampleRate: sampleRate)
-                // End of phase 1. Local `tts` binding will be released
-                // when this closure exits. Phase 2 (below) is queued on
-                // the same SERIAL workQueue and runs only after this
-                // closure has fully exited — by then the only remaining
-                // strong ref to KokoroTTS is `self.tts`, which phase 2
-                // will nil out. Critical for MLX cache to actually drop
-                // the model weights instead of holding them as cached
-                // buffers we never clear.
             } catch {
                 DispatchQueue.main.async {
                     self.status = "Synth error: \(error.localizedDescription)"
                     self.isRunning = false
+                    // CRITICAL: also flip isSpeaking false on the error
+                    // path. If we already started playing earlier chunks
+                    // before the failing one, isSpeaking is currently
+                    // true and the dataPlayedBack callback will NEVER
+                    // fire (it was attached to the last chunk we never
+                    // got to schedule). Without this line, anyone
+                    // awaiting playback to end (WalkingView's runAsk)
+                    // would hang indefinitely.
+                    self.isSpeaking = false
+                    self.captionTimer?.invalidate()
+                    self.captionTimer = nil
                 }
             }
         }
 
         // Phase 2: drop the KokoroTTS engine and clear MLX's cache.
-        // This block runs AFTER phase 1's closure has exited (serial
-        // queue), so the local strong reference inside that closure is
-        // already gone. Setting `self.tts = nil` now is the last drop;
-        // ARC deinits KokoroTTS, MLX returns its buffers into the cache
-        // pool, and `Memory.clearCache()` immediately releases them.
+        // Runs after phase 1 closure exits (serial workQueue). Phase 1
+        // exits when ALL chunks have been scheduled; at that point the
+        // KokoroTTS instance is no longer needed (the player has the
+        // PCM buffers). Phase 2 nil's it out and clears MLX cache.
         workQueue.async { [weak self] in
             guard let self else { return }
             self.tts = nil
             Memory.clearCache()
             DispatchQueue.main.async {
-                // Status reflects truth: model is unloaded again.
-                // The just-completed synth's RTF is preserved in
-                // `lastResult` for the "Last TTS run" section.
                 self.status = "Idle"
                 MemoryStats.log("kokoro.unload done")
             }
@@ -351,35 +452,47 @@ final class ValidationRunner: ObservableObject {
 
     /// Walks captionTokens in order, advancing as audioTime crosses each
     /// token's start_ts. Updates currentCaption on the main run loop.
-    /// Also drives `isSpeaking` — true while audio is reaching the user.
+    ///
+    /// **Streaming-aware**: captionTokens grows over time as new chunks
+    /// finish synthesizing (each chunk's tokens are appended on the
+    /// main queue with global timestamps already applied). The timer
+    /// keeps running and pulling tokens until `isSpeaking` flips false
+    /// — that happens when the LAST scheduled buffer's playback
+    /// completion callback fires (set up in `synthesize`). We don't
+    /// use `captionTokens.last.endTs` as the stop signal because it
+    /// keeps moving as more chunks arrive.
+    ///
+    /// Sets `captionStartTime = Date()` itself — must happen AFTER the
+    /// `stopCaptionTimer()` call below, which nils it out. (Earlier
+    /// versions set this from the call site, which broke the moment
+    /// `stopCaptionTimer()` ran inside this function and erased the
+    /// just-set timestamp; the timer then fired but bailed every tick
+    /// on the `guard let start` check.)
     private func startCaptionTimer() {
         stopCaptionTimer()
-        guard !captionTokens.isEmpty else { return }
-        currentCaption = ""
-        isSpeaking = true
         captionStartTime = Date()
         var nextIndex = 0
 
         captionTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] timer in
-            guard let self, let start = self.captionStartTime else {
+            guard let self else {
                 timer.invalidate(); return
             }
+            // The dataPlayedBack callback on the last buffer flips
+            // isSpeaking false; that's our signal to retire.
+            guard self.isSpeaking else {
+                timer.invalidate()
+                self.captionTimer = nil
+                return
+            }
+            guard let start = self.captionStartTime else { return }
             let elapsed = Date().timeIntervalSince(start)
 
-            // Append every token whose start has been reached.
             while nextIndex < self.captionTokens.count,
                   self.captionTokens[nextIndex].startTs <= elapsed {
                 let t = self.captionTokens[nextIndex]
                 let sep = t.whitespace.isEmpty ? "" : t.whitespace
                 self.currentCaption += t.text + sep
                 nextIndex += 1
-            }
-
-            // Done when we've passed the last token's end + a small grace period.
-            if let last = self.captionTokens.last, elapsed > last.endTs + 0.5 {
-                timer.invalidate()
-                self.captionTimer = nil
-                self.isSpeaking = false
             }
         }
     }
@@ -423,35 +536,99 @@ final class ValidationRunner: ObservableObject {
         }
     }
 
-    // MARK: - Text chunking (avoid 510-token cap)
+    // MARK: - Text normalization + chunking
 
-    // MARK: - Text chunking (phrase-level, to avoid Kokoro's start-glitch)
+    /// Replace punctuation Kokoro's grapheme-to-phoneme mishandles
+    /// (em / en dashes, smart quotes, ellipses, compound hyphens) with
+    /// ASCII equivalents the model was trained on. Without this we get
+    /// audible artifacts at every dash and curly quote: a mechanical
+    /// clip, an unnatural pause, or a mispronunciation of the
+    /// surrounding word.
+    ///
+    /// Specifically:
+    ///   • " — "  → ", "        (em dash with spaces = parenthetical pause)
+    ///   • "—"     → " "         (tight em dash = soft join)
+    ///   • smart quotes → ASCII apostrophe / quote
+    ///   • "…"     → ". "
+    ///   • "word-word" → "word word"  (compound hyphen becomes a soft
+    ///     word break — see comment below)
+    /// Then collapses double spaces that the substitutions can leave behind.
+    ///
+    /// **Compound hyphens.** Trail narration is full of compound words
+    /// like "year-round", "Howe-truss", "four-story", "eighty-ton",
+    /// "moss-covered". Misaki's G2P treats `word-word` as TWO prosodic
+    /// units with a hard boundary at the hyphen, which sounds like a
+    /// glitch / sharp clip / unnatural cut between the halves. Replacing
+    /// the hyphen with a space turns each side into a normal word; the
+    /// resulting prosody has a natural soft join instead of an artifact.
+    /// We restrict the replacement to hyphens flanked by word characters
+    /// on BOTH sides so leading/trailing hyphens (rare in narration) are
+    /// left alone.
+    private static func normalizeForSynthesis(_ text: String) -> String {
+        var s = text
+        s = s.replacingOccurrences(of: " — ", with: ", ")
+        s = s.replacingOccurrences(of: " – ", with: ", ")
+        s = s.replacingOccurrences(of: "—",   with: " ")
+        s = s.replacingOccurrences(of: "–",   with: " ")
+        s = s.replacingOccurrences(of: "\u{2018}", with: "'")  // '
+        s = s.replacingOccurrences(of: "\u{2019}", with: "'")  // '
+        s = s.replacingOccurrences(of: "\u{201C}", with: "\"") // "
+        s = s.replacingOccurrences(of: "\u{201D}", with: "\"") // "
+        s = s.replacingOccurrences(of: "\u{2026}", with: ". ")
+        // Compound hyphens: only between word characters on both sides.
+        s = s.replacingOccurrences(
+            of: "(?<=\\w)-(?=\\w)",
+            with: " ",
+            options: .regularExpression
+        )
+        while s.contains("  ") {
+            s = s.replacingOccurrences(of: "  ", with: " ")
+        }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
-    /// Empirically: Kokoro's duration predictor goes unstable on inputs
-    /// over ~60 characters and produces a high-pitch beep covering the
-    /// first ~1–2 seconds of audio. The token-cap (510) is irrelevant
-    /// at this scale — the bug fires far below it. So we chunk much
-    /// more aggressively than the cap requires, on every phrase break,
-    /// to keep each chunk safely below the trigger.
-    private static let phraseDelimiters: [Character] = [".", "!", "?", ",", ":", ";"]
-
-    /// Hard ceiling per chunk. Empirical safe zone is ~60 chars, but a
-    /// run-on phrase between commas can be longer than that and still
-    /// behave fine. 80 is a compromise — we hard-chop at word boundaries
-    /// only past this point.
+    /// Why we chunk: Kokoro's duration predictor goes unstable on
+    /// inputs over ~60 characters and produces a high-pitch beep
+    /// covering the first ~1–2 s of audio. So we keep each chunk
+    /// below ~80 chars.
+    ///
+    /// Why we PREFER sentence boundaries: each chunk is synthesized
+    /// independently, so the model can't carry prosody across the
+    /// boundary. Splitting at a comma mid-clause makes the resulting
+    /// audio sound mechanical (a sharp beat where there should be a
+    /// flowing intonation curve). Splitting at a `. ! ?` is natural —
+    /// prosody resets there anyway.
+    ///
+    /// Strategy: split on sentence enders first. Only fall back to
+    /// clause delimiters (`, : ;`) for sentences that exceed the
+    /// 80-char ceiling. Hard-chop at word boundaries as last resort.
+    private static let sentenceEnders: [Character] = [".", "!", "?"]
+    private static let clauseDelimiters: [Character] = [",", ":", ";"]
     private static let maxCharsPerChunk = 80
 
     private static func splitForSynthesis(_ text: String) -> [String] {
-        let primary = splitOnDelimiters(text, delimiters: phraseDelimiters)
-        var safe: [String] = []
-        for s in primary {
+        // Stage 1: split on sentence enders.
+        let stage1 = splitOnDelimiters(text, delimiters: sentenceEnders)
+        // Stage 2: any sentence still > maxCharsPerChunk → split on clauses.
+        var stage2: [String] = []
+        for s in stage1 {
             if s.count <= maxCharsPerChunk {
-                safe.append(s)
+                stage2.append(s)
             } else {
-                safe.append(contentsOf: hardChop(s, maxChars: maxCharsPerChunk))
+                stage2.append(contentsOf:
+                    splitOnDelimiters(s, delimiters: clauseDelimiters))
             }
         }
-        let cleaned = safe
+        // Stage 3: anything STILL too long → hard-chop at word boundaries.
+        var stage3: [String] = []
+        for s in stage2 {
+            if s.count <= maxCharsPerChunk {
+                stage3.append(s)
+            } else {
+                stage3.append(contentsOf: hardChop(s, maxChars: maxCharsPerChunk))
+            }
+        }
+        let cleaned = stage3
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         return cleaned.isEmpty ? [text] : cleaned
