@@ -95,14 +95,25 @@ final class GemmaService: ObservableObject {
     /// The "best guess + visible cue, no hedging" advice applies to
     /// text questions about species too ("what's that bird call?")
     /// and is short enough that the cost on the text path is fine.
+    ///
+    /// The "if it's not outdoors" sentence is an ESCAPE HATCH for
+    /// over-anchoring. With the trail block and stop framing both
+    /// describing a specific outdoor location, plus a "don't hedge"
+    /// instruction, the model would force ANY photo into the trail
+    /// context — show it a coffee mug and it'd say "looks like a
+    /// rock." Explicit permission to describe off-context images
+    /// literally fixes that without undoing the on-trail benefits.
     private let baseInstructions = """
     You are a friendly outdoor companion who helps hikers understand what they \
     see — geology, plants, animals, weather. Keep responses brief and \
     conversational: 2 to 4 short sentences. Speak as if narrating, not as if \
     writing a report. When uncertain about a species, give your best guess \
     with one observable cue (leaf shape, bark, color) — don't hedge into \
-    vagueness. Remember earlier turns of this conversation when answering \
-    follow-up questions.
+    vagueness. If a photo clearly shows something outside the outdoors — an \
+    indoor object, a manufactured item, a person, food, a screen — describe \
+    what is actually there in plain language; don't force it into the trail's \
+    flora, fauna, or geology. Remember earlier turns of this conversation \
+    when answering follow-up questions.
     """
 
     /// Composed once per `setActiveContext` call; injected into the
