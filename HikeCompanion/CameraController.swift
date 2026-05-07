@@ -138,8 +138,10 @@ final class CameraController: NSObject, ObservableObject {
         sessionQueue.async { [weak self] in
             guard let self else { return }
             let settings = AVCapturePhotoSettings()
-            // Default JPEG; flash auto.
-            settings.flashMode = .auto
+            // Use auto flash only if the device supports it (iPad Air has no flash).
+            if self.photoOutput.supportedFlashModes.contains(.auto) {
+                settings.flashMode = .auto
+            }
             self.photoOutput.capturePhoto(with: settings, delegate: self)
         }
     }
