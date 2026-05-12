@@ -186,176 +186,215 @@ enum TrailData {
         """
     )
 
-    static let hellsHollow = Trail(
-        id: "hells",
-        name: "Hells Hollow",
-        region: "McConnells Mill",
-        parkLocation: "McConnells Mill State Park",
-        distanceMiles: 1.2,
+    /// Old Field & Jennings Trail Loop at the Wildflower Reserve,
+    /// Raccoon Creek State Park. Replaces the previous Hells Hollow
+    /// trail (the design/mockups.html source-of-truth swapped this in,
+    /// see design/README.md "Hells Hollow → Wildflower Reserve" entry).
+    /// Path is stitched from real OSM ways (Old Field Trail [Red] +
+    /// Jennings Trail [Blue]) — GPX-accurate, unlike Kildoo/Tranquil
+    /// whose coordinates are visual estimates.
+    static let oldField = Trail(
+        id: "oldfield",
+        name: "Old Field & Jennings",
+        region: "Wildflower Reserve",
+        parkLocation: "Raccoon Creek State Park",
+        distanceMiles: 2.3,
         durationMinutes: 50,
         difficulty: "Easy",
-        stopCount: 3,
+        stopCount: 5,
         bytes: 41 * 1_024 * 1_024,
-        coverImageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/2/22/Hell%27s_Hollow_Falls.JPG"),
+        coverImageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/b/b6/Jennings_Environmental_Education_Center.jpg"),
         stops: [
             TrailStop(
                 number: 1,
-                name: "Trailhead Steps",
-                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/2/22/Hell%27s_Hollow_Falls.JPG"),
+                name: "Trailhead",
+                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/b/b6/Jennings_Environmental_Education_Center.jpg"),
                 sentences: [
-                    "The trail drops sharply down a wooded ravine.",
-                    "Keep an eye on the railings — the steps stay slick year-round.",
-                    "Hemlock and rhododendron close in overhead."
+                    "You're at the southwest entrance to the Wildflower Reserve loop.",
+                    "These woods hold one of the richest spring wildflower displays in Pennsylvania.",
+                    "Trilliums, Virginia bluebells, and Dutchman's breeches all bloom here."
                 ],
-                journalFact: "The descent into the gorge passes under a dense hemlock canopy."
+                journalFact: "The southwest trailhead at the Wildflower Reserve — gateway to one of Pennsylvania's richest spring ephemeral displays."
             ),
             TrailStop(
                 number: 2,
-                name: "Hells Hollow Falls",
-                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/2/22/Hell%27s_Hollow_Falls.JPG"),
+                name: "Wildflower Meadow",
+                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/6/60/Pittsburgh_frick_park_trail.jpg"),
                 sentences: [
-                    "The falls cut through a thick limestone shelf.",
-                    "The cool air at the base is the same year-round.",
-                    "This is the sound the place is known for."
+                    "A sunlit clearing along the Old Field Trail.",
+                    "In late April, the forest floor here turns white with large-flowered trillium.",
+                    "Wood thrushes and ovenbirds sing from the surrounding canopy."
                 ],
-                journalFact: "Hells Hollow Falls drops over a limestone bed laid down 350 million years ago."
+                journalFact: "Wildflower Meadow — large-flowered trillium carpets the forest floor in late April."
             ),
             TrailStop(
                 number: 3,
-                name: "Creek Junction",
-                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/2/26/McConnells_Mill_State_Park_Scenery_01.jpg"),
+                name: "East Overlook",
+                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/b/b6/Jennings_Environmental_Education_Center.jpg"),
                 sentences: [
-                    "Hells Run meets Slippery Rock Creek here.",
-                    "From here the trail loops back to the trailhead.",
-                    "Listen for wood thrush in spring."
+                    "The eastern turn of the loop, where Old Field meets Jennings Trail.",
+                    "The slope below drops down toward Raccoon Creek.",
+                    "On still mornings, mist rises through the trees in the valley."
                 ],
-                journalFact: "Hells Run flows into Slippery Rock Creek at this junction — a quiet spot to rest before climbing back out."
+                journalFact: "East Overlook — the slope drops toward Raccoon Creek; Old Field and Jennings join here."
+            ),
+            TrailStop(
+                number: 4,
+                name: "Forest Glen",
+                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/c/cc/Woodlands_around_McConnell%27s_Mill_State_Park.jpg"),
+                sentences: [
+                    "Deep into the Jennings Trail, the canopy thickens overhead.",
+                    "Look for jack-in-the-pulpit and wild ginger close to the path.",
+                    "Pileated woodpeckers work the dead snags here year-round."
+                ],
+                journalFact: "Forest Glen — deep canopy along Jennings Trail; jack-in-the-pulpit and pileated woodpeckers."
+            ),
+            TrailStop(
+                number: 5,
+                name: "Loop Close",
+                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/c/cc/Woodlands_around_McConnell%27s_Mill_State_Park.jpg"),
+                sentences: [
+                    "The last stretch back toward the trailhead.",
+                    "The understory opens up — sugar maple, beech, and red oak.",
+                    "A few quiet minutes and the loop is closed."
+                ],
+                journalFact: "The loop closes — sugar maple, beech, and red oak see us back to the start."
             )
         ],
         segmentLabels: [
-            "0.5 mi · about 14 minutes",
-            "0.4 mi · about 11 minutes",
-            "0.3 mi · back to trailhead"
+            "0.3 mi · about 7 minutes",
+            "0.4 mi · about 9 minutes",
+            "0.9 mi · about 20 minutes",
+            "0.6 mi · about 12 minutes",
+            "0.1 mi · final stretch"
         ],
-        stopProgressPositions: [0.18, 0.50, 0.82],
+        stopProgressPositions: [0.12, 0.31, 0.50, 0.69, 0.88],
         intro: """
-        Welcome to Hells Hollow. This is a short, easy loop on the \
-        north end of McConnells Mill State Park — about a mile and a \
-        quarter, fifty minutes round trip. The trail drops a hundred \
-        and fifty feet over half a mile, then levels out at a limestone \
-        waterfall. The descent is shaded by eastern hemlock and great \
-        rhododendron the whole way down — stay close to the railings, \
-        the steps stay damp year-round. Once we reach the falls, \
-        listen. The sound is what this place is known for.
+        Welcome to the Old Field and Jennings Trail Loop. This is a \
+        two-point-three mile loop at the Wildflower Reserve, in the \
+        northern end of Raccoon Creek State Park — about fifty minutes \
+        at a comfortable pace, rated easy. We're walking through one \
+        of the richest spring wildflower displays in Pennsylvania. \
+        In late April and early May, the forest floor here turns white \
+        with large-flowered trillium, blue with Virginia bluebells, \
+        and dotted with the pale lanterns of Dutchman's breeches.
+        We'll start at the southwest trailhead, head east through old \
+        fields and meadow edges, then return through deeper forest \
+        along the Jennings Trail back to where we began. Listen for \
+        wood thrush and ovenbird in spring.
+        Stop and ask me about any flower, tree, or bird call along \
+        the way. I'll be right here when you're ready.
         """,
         regionalContext: """
-        Trees: eastern hemlock, rhododendron, mountain laurel, beech, \
-        sugar maple, tulip poplar, yellow birch. Wildlife: \
-        white-tailed deer, wood thrush (spring), barred owls, \
-        salamanders in the falls spray zone. Mississippian limestone \
-        at the falls (~350 Mya), Pennsylvanian sandstone above. Cool \
-        damp microclimate; moss, ferns, lichens year-round.
+        Trees: sugar maple, American beech, red oak, white oak, tulip \
+        poplar, black cherry, hickory. Spring wildflowers (April-May): \
+        large-flowered trillium, Virginia bluebells, Dutchman's \
+        breeches, jack-in-the-pulpit, wild ginger, spring beauty, \
+        trout lily. Wildlife: white-tailed deer, wild turkey, pileated \
+        woodpeckers, wood thrush (spring), ovenbird, ruffed grouse, \
+        red foxes. Pennsylvanian sandstone and shale; Raccoon Creek \
+        watershed; one of the richest spring ephemeral wildflower \
+        displays in western Pennsylvania.
         """
     )
 
+    /// Tranquil Trail in Frick Park. Realigned with the mockup
+    /// source-of-truth (design/mockups.html → `TRAILS.tranquil`):
+    /// 1.1 mi out-and-back (was 1.5 mi loop), 3 stops (was 4), 30 min
+    /// (was 45). Stops are now Trailhead / Fern Hollow Creek / Forest
+    /// Grove — completely different from the previous Bridge / Nine
+    /// Mile Run / Falls Ravine / Forbes Overlook set.
     static let tranquil = Trail(
         id: "tranquil",
         name: "Tranquil Trail",
         region: "Frick Park",
         parkLocation: "Frick Park",
-        distanceMiles: 1.5,
-        durationMinutes: 45,
+        distanceMiles: 1.1,
+        durationMinutes: 30,
         difficulty: "Easy",
-        stopCount: 4,
+        stopCount: 3,
         bytes: 52 * 1_024 * 1_024,
         coverImageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/6/60/Pittsburgh_frick_park_trail.jpg"),
         stops: [
             TrailStop(
                 number: 1,
-                name: "Bridge Trail Entrance",
+                name: "Trailhead",
                 imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/6/60/Pittsburgh_frick_park_trail.jpg"),
                 sentences: [
-                    "Frick Park is the largest of Pittsburgh's regional parks.",
-                    "The trail follows an old streetcar grade.",
-                    "Oaks here are over a hundred years old."
+                    "The trail begins off Beechwood Boulevard.",
+                    "Frick Park is Pittsburgh's largest historic park.",
+                    "The forest here regrew over a century after logging."
                 ],
-                journalFact: "Frick Park's 644 acres were donated by Henry Clay Frick's daughter in 1919."
+                journalFact: "The trail begins off Beechwood Boulevard. Frick Park is Pittsburgh's largest historic park — 644 acres donated by Helen Clay Frick in 1919."
             ),
             TrailStop(
                 number: 2,
-                name: "Nine Mile Run",
+                name: "Fern Hollow Creek",
                 imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/6/60/Pittsburgh_frick_park_trail.jpg"),
                 sentences: [
-                    "Nine Mile Run flows through the park to the Monongahela.",
-                    "The stream was once buried under industrial slag.",
-                    "Restoration work brought it back to daylight in 2006."
+                    "Fern Hollow Creek runs alongside the trail.",
+                    "It empties into Nine Mile Run downstream.",
+                    "The valley was carved during the last glacial period."
                 ],
-                journalFact: "Nine Mile Run was uncovered in 2006 — one of the largest urban stream restorations in the U.S."
+                journalFact: "Fern Hollow Creek runs alongside the trail and empties into Nine Mile Run downstream (daylit and restored in 2006)."
             ),
             TrailStop(
                 number: 3,
-                name: "Falls Ravine",
-                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/6/60/Pittsburgh_frick_park_trail.jpg"),
+                name: "Forest Grove",
+                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/c/cc/Woodlands_around_McConnell%27s_Mill_State_Park.jpg"),
                 sentences: [
-                    "A small seasonal waterfall sits just off the trail.",
-                    "Most of the year, only moss-covered stones mark the spot.",
-                    "After rain, the falls run again for a day or two."
+                    "Mature oaks and tulip poplars stand here.",
+                    "Some of these trees are over 150 years old.",
+                    "The understory is mostly spicebush and witch hazel."
                 ],
-                journalFact: "An ephemeral waterfall — visible only after heavy rain."
-            ),
-            TrailStop(
-                number: 4,
-                name: "Forbes Overlook",
-                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/6/60/Pittsburgh_frick_park_trail.jpg"),
-                sentences: [
-                    "From here you can see across the Monongahela to Squirrel Hill.",
-                    "The light is best in late afternoon.",
-                    "From here it's a short climb back to Forbes Avenue."
-                ],
-                journalFact: "Overlook from the southern edge of Frick Park, just before the trail returns to Forbes Avenue."
+                journalFact: "Mature oaks and tulip poplars — some over 150 years old. Turnaround point of this out-and-back walk."
             )
         ],
         segmentLabels: [
-            "0.4 mi · about 4 minutes",
-            "0.4 mi · about 4 minutes",
-            "0.4 mi · about 4 minutes",
-            "0.3 mi · back to start"
+            "0.3 mi · about 8 minutes",
+            "0.3 mi · about 7 minutes",
+            "— turn around at the grove"
         ],
-        stopProgressPositions: [0.12, 0.38, 0.62, 0.88],
+        stopProgressPositions: [0.12, 0.50, 0.88],
         intro: """
-        Welcome to the Tranquil Trail in Pittsburgh's Frick Park. \
-        This is one of the gentlest walks in the city — a mile and a \
-        half, rated easy, about forty-five minutes at a comfortable \
-        pace. The trail follows an old streetcar grade through a \
-        hardwood forest of oak, beech, and tulip poplar. Some of these \
-        trees are over a hundred years old. The path runs alongside \
-        Nine Mile Run, a stream that was buried under industrial slag \
-        for most of the twentieth century and brought back to daylight \
-        in 2006. Take your time and enjoy the quiet — you're inside \
-        one of the few stretches of urban old growth left in Pennsylvania.
+        Welcome to the Tranquil Trail in Frick Park — Pittsburgh's \
+        largest historic park. This is a short out-and-back walk: a \
+        mile and a tenth from start to turnaround and back, about \
+        thirty minutes at a comfortable pace, rated easy. The trail \
+        begins off Beechwood Boulevard and drops gently into the \
+        valley of Fern Hollow Creek, which empties into Nine Mile \
+        Run downstream. The forest here regrew over a century after \
+        logging, and the path passes through mature stands of oak \
+        and tulip poplar — some of these trees are over a hundred \
+        and fifty years old. Listen for thrushes and woodpeckers, \
+        watch for spicebush and witch hazel in the understory, and \
+        take your time. We'll turn around at Forest Grove.
         """,
         regionalContext: """
-        Trees: white oak, red oak, beech, tulip poplar, sugar maple, \
-        American elm, black cherry, sycamore (creek). Wildlife: \
-        gray squirrels, white-tailed deer, red-tailed hawks, \
-        barred owls, wood thrush, indigo bunting, red foxes \
-        (occasional). Nine Mile Run is a daylit urban stream restored \
-        in 2006; green frogs, snapping turtles, stocked brook trout. \
-        Pittsburgh Coal strata (Pennsylvanian, ~300 Mya); legacy \
-        industrial slag through most of the 20th century.
+        Trees: white oak, red oak, American beech, tulip poplar, \
+        sugar maple, black cherry, spicebush and witch hazel \
+        (understory). Wildlife: gray squirrels, white-tailed deer, \
+        red-tailed hawks, barred owls, wood thrush, pileated \
+        woodpeckers, red foxes (occasional). Fern Hollow Creek runs \
+        alongside the trail and empties into Nine Mile Run \
+        downstream — a daylit urban stream restored from 2002. \
+        Pittsburgh Coal strata (Pennsylvanian, ~300 Mya); the \
+        valley was carved during the last glacial period.
         """
     )
 
     /// Order shown on the picker.
-    static let all: [Trail] = [kildoo, hellsHollow, tranquil]
+    static let all: [Trail] = [kildoo, oldField, tranquil]
 
     static func status(for trail: Trail) -> TrailStatus {
         switch trail.id {
-        case "hells":   return .walked(dateLabel: "Apr 14")
+        // Old Field & Jennings shows as "Completed Apr 14" on the
+        // picker — matches the mockup's per-card status badge.
+        case "oldfield": return .walked(dateLabel: "Apr 14")
         // Models are bundled at app install — every trail is "ready" from
         // the user's perspective; the per-trail download flow in the
         // mockup is decorative.
-        default:        return .ready
+        default:         return .ready
         }
     }
 }
