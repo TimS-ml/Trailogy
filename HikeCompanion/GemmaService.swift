@@ -129,6 +129,18 @@ final class GemmaService: ObservableObject {
     /// turns — only the user's actual question is preserved).
     private var stopContextBlock: String = ""
 
+    /// RAG retrieval result, set by the caller before `streamResponse`.
+    /// One-shot: cleared automatically once injected into the prompt,
+    /// so the next Ask starts fresh. Caller (typically WalkingView's
+    /// `runAsk`) fetches chunks via `RAGService.retrieve` and formats
+    /// them via `RAGService.formatChunksForPrompt`. Stripped from
+    /// saved history alongside `stopContextBlock` — only the user's
+    /// actual question carries forward across turns.
+    ///
+    /// Public (not `private(set)`) so callers can write directly,
+    /// matching the established `bioclipContext`-style pattern.
+    var ragContext: String = ""
+
     /// Mobile memory budget for both text and VLM asks. Sized to fit
     /// what the worst real path actually needs, with the trimmed
     /// regional contexts and merged base instructions:
@@ -300,12 +312,22 @@ final class GemmaService: ObservableObject {
             forImage: !imageInputs.isEmpty
         )
 
-        // Sandwich the user's prompt with the current stop framing if
-        // we have one. Saved history keeps just `prompt` (without the
-        // stop framing) — see persist block below.
-        let composedPrompt = stopContextBlock.isEmpty
-            ? prompt
-            : "\(stopContextBlock)\n\n\(prompt)"
+        // Sandwich the user's prompt with the current stop framing and
+        // RAG retrieval block when present. Order: stop framing first
+        // (immediate sensory context), then retrieved chunk (deeper
+        // factual context), then the user's actual question. Saved
+        // history keeps just `prompt` (without either framing) — see
+        // persist block below.
+        var promptParts: [String] = []
+        if !stopContextBlock.isEmpty { promptParts.append(stopContextBlock) }
+        if !ragContext.isEmpty       { promptParts.append(ragContext) }
+        promptParts.append(prompt)
+        let composedPrompt = promptParts.joined(separator: "\n\n")
+
+        // One-shot: clear ragContext so a follow-up turn without a
+        // matching subject pick doesn't accidentally re-inject a stale
+        // chunk. The caller re-sets this before each Ask.
+        ragContext = ""
 
         let session = ChatSession(
             container,

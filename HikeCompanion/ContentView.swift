@@ -18,6 +18,7 @@ struct ContentView: View {
     @StateObject private var gemma = GemmaService()
     @StateObject private var tts = ValidationRunner()
     @StateObject private var speech = SpeechRecognizer()
+    @StateObject private var rag = RAGService()
     @StateObject private var router = AppRouter()
 
     var body: some View {
@@ -42,11 +43,13 @@ struct ContentView: View {
         .environmentObject(gemma)
         .environmentObject(tts)
         .environmentObject(speech)
+        .environmentObject(rag)
         .sheet(isPresented: $router.debugVisible) {
             DebugView()
                 .environmentObject(gemma)
                 .environmentObject(tts)
                 .environmentObject(speech)
+                .environmentObject(rag)
         }
     }
 }

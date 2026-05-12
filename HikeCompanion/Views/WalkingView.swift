@@ -28,6 +28,7 @@ struct WalkingView: View {
     @EnvironmentObject var gemma: GemmaService
     @EnvironmentObject var tts: ValidationRunner
     @EnvironmentObject var speech: SpeechRecognizer
+    @EnvironmentObject var rag: RAGService
 
     var trail: Trail { router.currentTrail }
 
@@ -1039,6 +1040,24 @@ struct WalkingView: View {
 
         Task {
             do {
+                // RAG retrieval BEFORE Gemma loads. Text-only path only
+                // for v1 — VLM Asks already pay ~196 image tokens, and
+                // stacking RAG chunks on top exceeds our 1024 KV budget.
+                // If no subject is active or retrieval errors, we just
+                // proceed without an injected chunk (graceful fallback).
+                if photoForThisTurn == nil, rag.activeSubject != nil {
+                    do {
+                        let chunks = try await rag.retrieve(query: prompt, k: 1)
+                        let block = rag.formatChunksForPrompt(chunks)
+                        await MainActor.run { gemma.ragContext = block }
+                    } catch {
+                        // Retrieval failed (corpus missing, model not
+                        // ready, etc.) — log and continue without RAG.
+                        // Gemma will answer from its own knowledge.
+                        print("[RAG] retrieve failed: \(error.localizedDescription)")
+                    }
+                }
+
                 try await gemma.loadIfNeeded(kind)
 
                 guard let stream = gemma.streamResponse(

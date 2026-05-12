@@ -36,6 +36,14 @@ packages:
     url: https://github.com/huggingface/swift-huggingface
     minVersion: "0.8.1"
     maxVersion: "1.0.0"
+  # swift-embeddings provides the on-device embedding model (MiniLM
+  # via MLTensor) for the Phase 4 RAG path. Auto-routes to ANE/GPU/CPU.
+  # Pre-1.0 dep — pinned tight; expect occasional API churn on bumps.
+  # MIT license. See ADR-001-rag-architecture for design rationale.
+  swift-embeddings:
+    url: https://github.com/jkrukowski/swift-embeddings
+    minVersion: "0.0.16"
+    maxVersion: "0.1.0"
 
 settings:
   base:
@@ -97,6 +105,13 @@ targets:
       # swift-transformers/Hub but listed directly so we can import it.
       - package: swift-huggingface
         product: HuggingFace
+      # swift-embeddings: BERT/MiniLM-style embedders via MLTensor.
+      # `Embeddings` is the main API (Bert.loadModelBundle, encode);
+      # `MLTensorUtils` provides cosineDistance and small helpers.
+      - package: swift-embeddings
+        product: Embeddings
+      - package: swift-embeddings
+        product: MLTensorUtils
     # Increased Memory Limit entitlement (Phase 3b VLM).
     # Without this the iPhone foreground app footprint cap is ~3.5–4 GB
     # before iOS jetsam kills the process. Gemma 4 VLM resident is

@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "corpus_version": "0.1.0-poc",
+  "created": "2026-05-09",
+  "subjects": [
+    {
+      "id": "geology",
+      "displayName": "Geology",
+      "file": "geology.jsonl",
+      "chunkCount": 25,
+      "embeddingDim": null,
+      "embeddingModel": null,
+      "indexFormat": null,
+      "regions": ["general", "western_pa"],
+      "license": "Hand-authored, public-domain knowledge. Not vetted."
+    },
+    {
+      "id": "plants",
+      "displayName": "Plants",
+      "file": "plants.jsonl",
+      "chunkCount": 25,
+      "embeddingDim": null,
+      "embeddingModel": null,
+      "indexFormat": null,
+      "regions": ["general", "western_pa"],
+      "license": "Hand-authored, public-domain knowledge. Not vetted."
+    },
+    {
+      "id": "physics",
+      "displayName": "Physics",
+      "file": "physics.jsonl",
+      "chunkCount": 20,
+      "embeddingDim": null,
+      "embeddingModel": null,
+      "indexFormat": null,
+      "regions": ["general"],
+      "license": "Hand-authored, public-domain knowledge. Not vetted."
+    },
+    {
+      "id": "english",
+      "displayName": "English",
+      "file": "english.jsonl",
+      "chunkCount": 20,
+      "embeddingDim": null,
+      "embeddingModel": null,
+      "indexFormat": null,
+      "regions": ["general"],
+      "license": "Hand-authored analytical summaries; references public-domain authors. Not vetted."
+    }
+  ],
+  "notes": [
+    "PoC dataset for hackathon validation.",
+    "Embeddings have NOT been generated yet — run the embedder script next.",
+    "Replace with vetted, sourced content before any public release."
+  ]
+}

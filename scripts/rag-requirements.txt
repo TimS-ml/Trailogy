@@ -1,0 +1,8 @@
+# Python dependencies for the RAG PoC pipeline.
+# Install with:  pip install -r scripts/rag-requirements.txt
+#
+# Targets Python 3.10+. On Apple Silicon, sentence-transformers will use
+# the Metal backend automatically (PyTorch's MPS).
+
+sentence-transformers>=2.7.0
+numpy>=1.24
