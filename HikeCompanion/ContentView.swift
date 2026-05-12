@@ -44,6 +44,18 @@ struct ContentView: View {
         .environmentObject(tts)
         .environmentObject(speech)
         .environmentObject(rag)
+        // Preload the MiniLM embedder at launch in the background.
+        // ~40 MB resident (small next to Gemma's 2.8 GB and Kokoro's
+        // ~300 MB peak), and first-run downloads ~80 MB from HF — so
+        // we start that before the user has a chance to ask. By the
+        // time they hit the mic, the embedder is hot.
+        .task {
+            do {
+                try await rag.preload()
+            } catch {
+                print("[RAG] preload failed: \(error.localizedDescription) — retrieval will retry on first use")
+            }
+        }
         .sheet(isPresented: $router.debugVisible) {
             DebugView()
                 .environmentObject(gemma)

@@ -323,6 +323,7 @@ final class GemmaService: ObservableObject {
         if !ragContext.isEmpty       { promptParts.append(ragContext) }
         promptParts.append(prompt)
         let composedPrompt = promptParts.joined(separator: "\n\n")
+        print("[Gemma] streamResponse composed prompt: \(composedPrompt.count) chars · stopFraming=\(!stopContextBlock.isEmpty) ragContext=\(!ragContext.isEmpty) imageTokens=\(!imageInputs.isEmpty)")
 
         // One-shot: clear ragContext so a follow-up turn without a
         // matching subject pick doesn't accidentally re-inject a stale

@@ -75,10 +75,14 @@ final class RAGService: ObservableObject {
 
     // MARK: - Internals
 
-    /// HuggingFace model id resolved via swift-embeddings on first use.
-    /// Note: this is the FP-precision model, not the 4-bit MLX variant
-    /// — swift-embeddings loads HF format directly. ~40 MB at FP16.
-    private let embeddingModelID = "sentence-transformers/all-MiniLM-L6-v2"
+    /// Name of the bundled embedder directory under
+    /// `Resources/Models/MiniLM/`. The model is shipped IN-APP rather
+    /// than downloaded from HuggingFace at runtime — we accepted the
+    /// ~87 MB bundle-size hit (small next to Gemma + Kokoro) in
+    /// exchange for offline-from-install behavior and no first-run
+    /// network requirement. See `scripts/fetch-models.sh` for the
+    /// fetch logic that populates this directory on fresh clones.
+    private let embedderBundleSubdir = "MiniLM"
 
     /// Embedding dimension produced by `all-MiniLM-L6-v2`. Hard-coded
     /// here to avoid asserting against a freshly-loaded model. If we
@@ -122,9 +126,25 @@ final class RAGService: ObservableObject {
             activeEmbeddings = []
             isCorpusLoaded = false
             status = "RAG idle"
+            print("[RAG] activeSubject cleared")
             return
         }
         try loadCorpus(for: subject)
+        print("[RAG] activeSubject = \(subject.rawValue), \(activeChunks.count) chunks loaded")
+    }
+
+    /// Eagerly download + load the embedding model. Called from
+    /// `ContentView.task` at app launch so the ~80 MB MiniLM HF
+    /// download happens in the background before the user takes
+    /// their first Ask. Subsequent retrievals see a hot model.
+    ///
+    /// Safe to call multiple times — `ensureModelLoaded` is
+    /// idempotent. Failures are logged; retrieval will retry on
+    /// next call.
+    func preload() async throws {
+        print("[RAG] preload start")
+        try await ensureModelLoaded()
+        print("[RAG] preload done")
     }
 
     /// Retrieve top-k chunks most semantically similar to `query`.
@@ -135,9 +155,19 @@ final class RAGService: ObservableObject {
     ///   - query: natural-language question text
     ///   - k: number of chunks to return (default 1; ADR caps at 2)
     func retrieve(query: String, k: Int = 1) async throws -> [RAGChunk] {
-        guard activeSubject != nil else { return [] }
-        guard !activeChunks.isEmpty else { return [] }
-        guard !query.isEmpty else { return [] }
+        guard let subject = activeSubject else {
+            print("[RAG] retrieve skipped: no active subject")
+            return []
+        }
+        guard !activeChunks.isEmpty else {
+            print("[RAG] retrieve skipped: corpus empty for \(subject.rawValue)")
+            return []
+        }
+        guard !query.isEmpty else {
+            print("[RAG] retrieve skipped: empty query")
+            return []
+        }
+        print("[RAG] retrieve subject=\(subject.rawValue) k=\(k) q=\"\(query.prefix(80))\"")
 
         try await ensureModelLoaded()
         let queryVec = try await embed(query)
@@ -153,6 +183,10 @@ final class RAGService: ObservableObject {
         }
         ranked.sort { $0.score > $1.score }
         let topK = ranked.prefix(k).map { activeChunks[$0.idx] }
+        if let top = ranked.first {
+            let chunk = activeChunks[top.idx]
+            print("[RAG] top: \(chunk.id) \"\(chunk.title)\" score=\(String(format: "%.3f", top.score))")
+        }
         return Array(topK)
     }
 
@@ -230,12 +264,39 @@ final class RAGService: ObservableObject {
         if modelBundle != nil { return }
         #if canImport(Embeddings)
         status = "Loading embedder…"
+
+        // Resolve the bundled model directory.
+        // Bundle.main.url(forResource:) requires a specific file inside
+        // the folder reference, so we look for config.json and walk up.
+        guard let configURL = Bundle.main.url(
+                forResource: "config",
+                withExtension: "json",
+                subdirectory: "Models/\(embedderBundleSubdir)")
+        else {
+            print("[RAG] embedder load FAILED: bundle missing Models/\(embedderBundleSubdir)/config.json")
+            throw RAGError.modelLoadFailed(
+                NSError(
+                    domain: "RAGService",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "MiniLM not in app bundle at Models/\(embedderBundleSubdir)/. " +
+                        "Run scripts/fetch-models.sh and rebuild."]
+                )
+            )
+        }
+        let modelFolder = configURL.deletingLastPathComponent()
+        print("[RAG] loading embedder from \(modelFolder.path) ...")
+
         do {
-            modelBundle = try await Bert.loadModelBundle(from: embeddingModelID)
+            let t0 = Date()
+            modelBundle = try await Bert.loadModelBundle(from: modelFolder)
             isModelLoaded = true
             status = "Embedder ready"
+            let elapsed = Date().timeIntervalSince(t0)
+            print(String(format: "[RAG] embedder ready (%.2fs)", elapsed))
         } catch {
             status = "Embedder load failed: \(error.localizedDescription)"
+            print("[RAG] embedder load FAILED: \(error.localizedDescription)")
             throw RAGError.modelLoadFailed(error)
         }
         #else

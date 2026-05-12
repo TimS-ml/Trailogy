@@ -1052,6 +1052,11 @@ struct WalkingView: View {
                     do {
                         let chunks = try await rag.retrieve(query: prompt, k: 1)
                         let block = rag.formatChunksForPrompt(chunks)
+                        if block.isEmpty {
+                            print("[RAG] no block to inject (chunks=\(chunks.count))")
+                        } else {
+                            print("[RAG] injecting \(block.count) chars into gemma.ragContext")
+                        }
                         await MainActor.run { gemma.ragContext = block }
                     } catch {
                         // Retrieval failed (corpus missing, model not
@@ -1059,6 +1064,10 @@ struct WalkingView: View {
                         // Gemma will answer from its own knowledge.
                         print("[RAG] retrieve failed: \(error.localizedDescription)")
                     }
+                } else if photoForThisTurn != nil {
+                    print("[RAG] skipped: VLM turn (has photo)")
+                } else {
+                    print("[RAG] skipped: no active subject")
                 }
 
                 try await gemma.loadIfNeeded(kind)
