@@ -3,10 +3,17 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <title>Nature companion — interactive prototype</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
 <style>
   :root {
@@ -203,6 +210,38 @@
   }
   .picker::-webkit-scrollbar { display: none; }
   .picker-head { padding: 6px 22px 22px; }
+  .profile-btn {
+    position: absolute;
+    top: 60px; right: 22px;
+    z-index: 10;
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(245,243,236,0.10);
+    color: var(--ink-100);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+    transition: background 200ms ease;
+  }
+  .profile-btn:hover {
+    background: rgba(255,255,255,0.10);
+  }
+  .badge.walked-link {
+    background: rgba(15,16,13,0.65);
+    border: none;
+    cursor: pointer;
+    color: var(--ink-100);
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--sans);
+    transition: background 200ms ease, color 200ms ease;
+  }
+  .badge.walked-link:hover {
+    background: rgba(217,245,113,0.12);
+    color: var(--lime);
+  }
+  .badge.walked-link svg { display: block; opacity: 0.65; }
+  .badge.walked-link:hover svg { opacity: 1; }
   .picker-head .theme {
     font-size: 10px;
     font-weight: 700;
@@ -238,9 +277,9 @@
   }
   .t-card {
     position: relative;
-    border-radius: 22px;
+    border-radius: 18px;
     overflow: hidden;
-    aspect-ratio: 16/13;
+    aspect-ratio: 16/9;
     background: #1a1a17;
     cursor: pointer;
     transition: transform 250ms ease;
@@ -300,28 +339,28 @@
   }
   .badge.walked { background: rgba(0,0,0,0.4); color: rgba(245,243,236,0.75); }
 
-  /* download pill */
+  /* download pill (no outline) */
   .dl-btn {
     position: absolute;
     top: 14px; right: 14px;
     z-index: 10;
-    background: rgba(0,0,0,0.55);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(217,245,113,0.55);
+    background: rgba(15,16,13,0.78);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: none;
     border-radius: 999px;
-    padding: 7px 13px 7px 11px;
+    padding: 8px 14px 8px 12px;
     color: var(--lime);
     font-family: var(--sans);
     font-size: 10.5px; font-weight: 700;
     letter-spacing: 0.08em; text-transform: uppercase;
-    display: inline-flex; align-items: center; gap: 6px;
+    display: inline-flex; align-items: center; gap: 7px;
     cursor: pointer;
     overflow: hidden;
     transition: transform 150ms ease, background 200ms ease;
     --dl-pct: 0%;
   }
-  .dl-btn:hover { background: rgba(0,0,0,0.7); }
+  .dl-btn:hover { background: rgba(15,16,13,0.92); }
   .dl-btn:active { transform: scale(0.96); }
   .dl-btn svg { display: block; }
   .dl-btn .dl-fill {
@@ -330,13 +369,10 @@
     width: var(--dl-pct);
     background: rgba(217,245,113,0.22);
     transition: width 120ms linear;
-    z-index: -1;
+    z-index: 0;
   }
   .dl-btn .dl-text { position: relative; z-index: 1; }
   .dl-btn .dl-icon { position: relative; z-index: 1; }
-  .dl-btn[data-state="downloading"] {
-    border-color: rgba(217,245,113,0.7);
-  }
 
   .picker-foot {
     margin: 4px 16px 0;
@@ -390,12 +426,123 @@
   .dm-canvas {
     flex: 1;
     position: relative;
-    padding: 4px 8px 4px;
-    background:
-      radial-gradient(ellipse 60% 40% at 50% 30%, rgba(217,245,113,0.05), transparent 70%),
-      radial-gradient(ellipse 80% 60% at 50% 80%, rgba(140,180,200,0.04), transparent 70%);
+    padding: 0;
+    background: #0a0c0a;
     overflow: hidden;
   }
+  .dm-leaflet {
+    width: 100%;
+    height: 100%;
+    background: #0a0c0a;
+  }
+  /* Leaflet customizations to match the app's dark aesthetic.
+     Same rules apply inside the detail-view canvas and the in-tour map overlay
+     so both maps render identically. */
+  .dm-canvas .leaflet-container,
+  .tm-canvas .leaflet-container {
+    background: #0a0c0a;
+    font-family: var(--sans);
+    outline: none;
+  }
+  /* brighten + add a touch of color so roads, water, and labels stand out
+     against the dark background. Affects only the tile layer — the lime trail
+     polyline lives in .leaflet-overlay-pane and isn't filtered. */
+  .dm-canvas .leaflet-tile-pane,
+  .tm-canvas .leaflet-tile-pane {
+    filter: brightness(1.55) contrast(1.15) saturate(1.15);
+  }
+  .dm-canvas .leaflet-control-attribution,
+  .tm-canvas .leaflet-control-attribution {
+    background: rgba(15,16,13,0.7);
+    color: rgba(245,243,236,0.5);
+    font-size: 9px;
+    font-family: var(--sans);
+    padding: 2px 6px;
+    border-radius: 4px 0 0 0;
+  }
+  .dm-canvas .leaflet-control-attribution a,
+  .tm-canvas .leaflet-control-attribution a {
+    color: rgba(217,245,113,0.7);
+  }
+
+  /* trail line styling */
+  .dm-canvas .leaflet-overlay-pane svg path.kildoo-trail,
+  .tm-canvas .leaflet-overlay-pane svg path.kildoo-trail {
+    filter: drop-shadow(0 0 6px rgba(217,245,113,0.45));
+  }
+
+  /* numbered waypoint markers — dark on dark map, lime when active */
+  .wp-icon {
+    position: relative;
+  }
+  .wp-pin {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(15,16,13,0.95);
+    border: 1.5px solid rgba(245,243,236,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(245,243,236,0.92);
+    font-weight: 800;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+  }
+  .wp-icon.wp-active .wp-pin {
+    background: var(--lime);
+    border-color: var(--lime);
+    color: #1a1f0a;
+    box-shadow: 0 0 0 6px rgba(217,245,113,0.18), 0 0 18px 4px rgba(217,245,113,0.45);
+    animation: wpBreathe 3.2s ease-in-out infinite;
+  }
+  @keyframes wpBreathe {
+    0%, 100% { box-shadow: 0 0 0 6px rgba(217,245,113,0.18), 0 0 18px 4px rgba(217,245,113,0.45); }
+    50%      { box-shadow: 0 0 0 9px rgba(217,245,113,0.10), 0 0 26px 6px rgba(217,245,113,0.55); }
+  }
+  .wp-label {
+    position: absolute;
+    top: 50%;
+    left: 100%;
+    transform: translateY(-50%);
+    margin-left: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    color: rgba(245,243,236,0.92);
+    white-space: nowrap;
+    pointer-events: none;
+    text-shadow:
+      0 0 3px #0a0c0a, 0 0 3px #0a0c0a, 0 0 3px #0a0c0a, 0 0 3px #0a0c0a,
+      0 0 6px rgba(0,0,0,0.9);
+  }
+  .wp-icon.wp-active .wp-label {
+    color: var(--lime);
+  }
+
+  /* Floating map controls (top-right of map) */
+  .map-controls {
+    position: absolute;
+    top: 16px; right: 16px;
+    z-index: 500;
+    display: flex; flex-direction: column;
+    gap: 8px;
+  }
+  .map-ctrl {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(15,16,13,0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(245,243,236,0.10);
+    color: rgba(245,243,236,0.85);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+    transition: background 200ms ease;
+  }
+  .map-ctrl:hover { background: rgba(15,16,13,0.95); color: var(--ink-100); }
   .dm-map {
     width: 100%;
     height: 100%;
@@ -444,19 +591,19 @@
   }
   .dm-stats {
     display: flex; align-items: center; justify-content: center;
-    gap: 10px;
-    font-size: 13.5px;
+    gap: 12px;
+    font-size: 16px;
     color: var(--ink-80);
     font-weight: 500;
-    letter-spacing: -0.005em;
-    margin-bottom: 16px;
+    letter-spacing: -0.01em;
+    margin-bottom: 18px;
   }
   .dm-stats b {
     color: var(--ink-100);
     font-weight: 700;
   }
   .dm-stats .d-dot {
-    width: 3px; height: 3px;
+    width: 3.5px; height: 3.5px;
     border-radius: 50%;
     background: var(--ink-40);
   }
@@ -639,22 +786,98 @@
 
   .spots {
     position: absolute;
-    top: 70px; left: 24px; right: 24px;
+    top: 76px; left: 28px; right: 28px;
     z-index: 5;
-    background: rgba(255,255,255,0.025);
-    border: 1px solid rgba(245,243,236,0.06);
-    border-radius: 12px;
-    padding: 10px 14px 9px;
+    background: none;
+    border: none;
+    padding: 6px 0 0;
     cursor: pointer;
     color: inherit;
     font-family: inherit;
     text-align: left;
-    transition: background 200ms ease, border-color 200ms ease;
+    transition: opacity 200ms ease, top 300ms ease;
   }
-  .spots:hover {
-    background: rgba(255,255,255,0.05);
-    border-color: rgba(245,243,236,0.12);
+  .spots:hover { opacity: 0.85; }
+
+  /* iOS-style system alert (UIAlertController look) */
+  /* z-index must beat Leaflet's panes/markers (~600) and our map controls (500) */
+  .ios-alert {
+    position: absolute;
+    inset: 0;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* backdrop must NOT apply while hidden, or it'll blur the screen when invisible */
+    background: transparent;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms ease, background 220ms ease;
   }
+  .ios-alert.is-shown {
+    opacity: 1;
+    pointer-events: auto;
+    background: rgba(0,0,0,0.42);
+    backdrop-filter: blur(8px) saturate(1.1);
+    -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  }
+  .ios-alert-card {
+    width: 270px;
+    background: rgba(60,60,67,0.82);
+    backdrop-filter: blur(40px) saturate(1.4);
+    -webkit-backdrop-filter: blur(40px) saturate(1.4);
+    border-radius: 14px;
+    overflow: hidden;
+    transform: scale(1.08);
+    transition: transform 240ms cubic-bezier(0.2, 1, 0.3, 1);
+    box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  }
+  .ios-alert.is-shown .ios-alert-card {
+    transform: scale(1);
+  }
+  .ios-alert-content {
+    padding: 19px 16px 17px;
+    text-align: center;
+  }
+  .ios-alert-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: #f5f3ec;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+  }
+  .ios-alert-msg {
+    margin-top: 4px;
+    font-size: 13px;
+    font-weight: 400;
+    color: rgba(245,243,236,0.84);
+    line-height: 1.35;
+    letter-spacing: -0.005em;
+  }
+  .ios-alert-actions {
+    display: flex;
+    border-top: 0.5px solid rgba(255,255,255,0.18);
+  }
+  .ios-alert-btn {
+    flex: 1;
+    padding: 11px 8px;
+    background: none;
+    border: none;
+    color: var(--lime);
+    font-family: var(--sans);
+    font-size: 17px;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+  .ios-alert-btn:hover { background: rgba(255,255,255,0.04); }
+  .ios-alert-btn:active { background: rgba(255,255,255,0.08); }
+  .ios-alert-btn + .ios-alert-btn {
+    border-left: 0.5px solid rgba(255,255,255,0.18);
+  }
+  .ios-alert-btn.cancel { color: rgba(245,243,236,0.78); }
+  .ios-alert-btn.primary { font-weight: 600; color: var(--lime); }
   .spots .line {
     position: relative;
     height: 1px;
@@ -881,12 +1104,16 @@
     letter-spacing: -0.005em;
   }
 
-  /* Lyric — positioned below the stop hero (which is at top:70 height:156, ends 226) */
+  /* Lyric — fills the vertical space between hero and controls, centered */
   .lyric {
     position: absolute;
-    top: 256px; left: 28px; right: 28px;
+    top: 240px; bottom: 180px;
+    left: 28px; right: 28px;
     text-align: center;
     z-index: 4;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     transition: opacity 600ms ease;
   }
   .walking[data-tour-state="between"] .lyric,
@@ -910,6 +1137,31 @@
   .walking[data-tour-state="approaching"] .walking-quiet {
     opacity: 1;
   }
+  /* walking step animation — three dots that lift in sequence */
+  .wq-dots {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 22px;
+  }
+  .wq-dots span {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--ink-60);
+    animation: wqStep 1.4s ease-in-out infinite;
+    transition: background 400ms ease;
+  }
+  .wq-dots span:nth-child(2) { animation-delay: 0.18s; }
+  .wq-dots span:nth-child(3) { animation-delay: 0.36s; }
+  @keyframes wqStep {
+    0%, 60%, 100% { opacity: 0.3; transform: translateY(0);   }
+    30%           { opacity: 1;   transform: translateY(-4px); }
+  }
+  .walking[data-tour-state="approaching"] .wq-dots span {
+    background: var(--lime);
+    box-shadow: 0 0 8px rgba(217,245,113,0.5);
+  }
+
   .wq-eyebrow {
     font-size: 10.5px;
     font-weight: 700;
@@ -949,28 +1201,97 @@
     opacity: 0;
     pointer-events: none;
   }
+
+  /* TOUR COMPLETE — shown after the last stop */
+  .tour-complete {
+    position: absolute;
+    top: 50%; left: 28px; right: 28px;
+    transform: translateY(-50%);
+    text-align: center;
+    z-index: 7;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 600ms ease;
+  }
+  .walking[data-tour-state="complete"] .tour-complete {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  /* When complete, hide the per-state content */
+  .walking[data-tour-state="complete"] .stop-hero,
+  .walking[data-tour-state="complete"] .lyric,
+  .walking[data-tour-state="complete"] .walking-quiet {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .tc-check {
+    width: 64px; height: 64px;
+    margin: 0 auto 22px;
+    border-radius: 50%;
+    background: rgba(217,245,113,0.10);
+    border: 1.5px solid var(--lime);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--lime);
+    box-shadow: 0 0 0 8px rgba(217,245,113,0.06), 0 0 24px 4px rgba(217,245,113,0.18);
+  }
+  .tc-eyebrow {
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--lime);
+    margin-bottom: 12px;
+  }
+  .tc-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--ink-100);
+    letter-spacing: -0.022em;
+    line-height: 1.2;
+  }
+  .tc-stats {
+    margin-top: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-60);
+    letter-spacing: -0.005em;
+  }
+  .tc-journal {
+    margin-top: 28px;
+    padding: 12px 24px;
+    background: var(--lime);
+    color: #1a1f0a;
+    border: none;
+    border-radius: 999px;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 14.5px;
+    letter-spacing: -0.005em;
+    cursor: pointer;
+    transition: background 200ms ease, transform 200ms ease;
+  }
+  .tc-journal:hover { background: var(--lime-2); }
+  .tc-journal:active { transform: scale(0.97); }
   .lyric.is-fading { opacity: 0.05; }
   .lyric p {
     transition: opacity 800ms ease;
     letter-spacing: -0.015em;
   }
   .lyric .prev {
-    font-size: 17px; font-weight: 500;
+    font-size: 19px; font-weight: 500;
     line-height: 1.35;
     color: var(--ink-100);
     opacity: 0.28;
-    margin-bottom: 14px;
+    margin-bottom: 22px;
   }
   .lyric .now {
-    font-size: 24px; font-weight: 600;
+    font-size: 28px; font-weight: 600;
     line-height: 1.25;
     color: var(--ink-100);
     opacity: 1;
-    margin-bottom: 14px;
+    margin-bottom: 22px;
     letter-spacing: -0.022em;
   }
   .lyric .next {
-    font-size: 17px; font-weight: 500;
+    font-size: 19px; font-weight: 500;
     line-height: 1.35;
     color: var(--ink-100);
     opacity: 0.14;
@@ -1313,9 +1634,9 @@
   }
   .tm-canvas {
     flex: 1;
-    padding: 4px 8px;
-    background:
-      radial-gradient(ellipse 60% 40% at 50% 50%, rgba(217,245,113,0.05), transparent 70%);
+    position: relative;
+    padding: 0;
+    background: #0a0c0a;
     overflow: hidden;
   }
   .tm-foot {
@@ -1704,10 +2025,15 @@
     <!-- ========== PICKER ========== -->
     <div class="view is-active" data-view="picker">
       <div class="picker">
+        <button class="profile-btn" id="profile-btn" aria-label="Profile">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <circle cx="9" cy="6.5" r="3" stroke="currentColor" stroke-width="1.4"/>
+            <path d="M3 15.5c0-2.8 2.7-5 6-5s6 2.2 6 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </button>
         <div class="picker-head">
-          <div class="theme">Nature, the best teacher.</div>
-          <div class="h">Trails near you</div>
-          <div class="sub">Pittsburgh</div>
+          <div class="h">Start exploration</div>
+          <div class="sub">Trails nearby</div>
         </div>
         <div class="trail-list">
 
@@ -1735,50 +2061,64 @@
               <div class="stats">
                 <span>2.0 mi</span><span class="dot"></span>
                 <span>Moderate</span><span class="dot"></span>
-                <span>50 min</span>
+                <span>1 hr</span>
               </div>
             </div>
           </div>
 
-          <!-- HELLS HOLLOW — walked -->
-          <div class="t-card" data-trail="hells">
+          <!-- OLD FIELD & JENNINGS — walked -->
+          <div class="t-card" data-trail="oldfield">
             <div class="photo">
-              <img src="https://upload.wikimedia.org/wikipedia/commons/2/22/Hell%27s_Hollow_Falls.JPG" alt="Hells Hollow Falls">
+              <img src="https://upload.wikimedia.org/wikipedia/commons/b/b6/Jennings_Environmental_Education_Center.jpg" alt="Jennings Environmental Education Center">
             </div>
             <div class="scrim"></div>
-            <div class="badge walked">Apr 14</div>
+            <button class="badge walked walked-link" data-journal-link aria-label="Open journal">
+              Completed Apr 14
+              <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                <path d="M2 1L6 4.5L2 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
             <div class="body">
-              <div class="region">McConnells Mill</div>
-              <div class="name">Hells Hollow</div>
+              <div class="region">Wildflower Reserve</div>
+              <div class="name">Old Field &amp; Jennings</div>
               <div class="stats">
-                <span>1.2 mi</span><span class="dot"></span>
+                <span>2.4 mi</span><span class="dot"></span>
                 <span>Easy</span><span class="dot"></span>
                 <span>50 min</span>
               </div>
             </div>
           </div>
 
-          <!-- TRANQUIL — available -->
+          <!-- TRANQUIL — available, with download button -->
           <div class="t-card" data-trail="tranquil">
             <div class="photo">
               <img src="https://upload.wikimedia.org/wikipedia/commons/6/60/Pittsburgh_frick_park_trail.jpg" alt="Frick Park trail">
             </div>
             <div class="scrim"></div>
+            <div id="tranquil-status">
+              <button class="dl-btn" id="dl-tranquil" data-state="idle">
+                <span class="dl-fill"></span>
+                <span class="dl-icon">
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    <path d="M5 1V7M5 7L2.5 4.5M5 7L7.5 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M1.5 9H8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                  </svg>
+                </span>
+                <span class="dl-text">Download · 42 MB</span>
+              </button>
+            </div>
             <div class="body">
               <div class="region">Frick Park</div>
               <div class="name">Tranquil Trail</div>
               <div class="stats">
-                <span>1.5 mi</span><span class="dot"></span>
+                <span>1.1 mi</span><span class="dot"></span>
                 <span>Easy</span><span class="dot"></span>
-                <span>15 min</span>
+                <span>30 min</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="picker-foot">
-          <button class="journal-link" id="open-journal">Journal</button>
-        </div>
       </div>
     </div>
 
@@ -1802,7 +2142,33 @@
 
         <!-- full-screen trail map -->
         <div class="dm-canvas">
-          <svg class="dm-map" viewBox="0 0 320 540" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <div id="detail-leaflet" class="dm-leaflet"></div>
+          <!-- map controls (decorative) -->
+          <div class="map-controls">
+            <button class="map-ctrl" aria-label="North up">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <polygon points="7,2 4,9 7,7 10,9" fill="#d65a3a"/>
+                <text x="7" y="13" font-size="5" font-weight="800" fill="currentColor" text-anchor="middle">N</text>
+              </svg>
+            </button>
+            <button class="map-ctrl" aria-label="Layers">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M7 2L1.5 5L7 8L12.5 5L7 2Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" fill="none"/>
+                <path d="M2 8.5L7 11L12 8.5" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" fill="none"/>
+              </svg>
+            </button>
+            <button class="map-ctrl" aria-label="Recenter">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <circle cx="7" cy="7" r="2.5" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <line x1="7" y1="1" x2="7" y2="3" stroke="currentColor" stroke-width="1.2"/>
+                <line x1="7" y1="11" x2="7" y2="13" stroke="currentColor" stroke-width="1.2"/>
+                <line x1="1" y1="7" x2="3" y2="7" stroke="currentColor" stroke-width="1.2"/>
+                <line x1="11" y1="7" x2="13" y2="7" stroke="currentColor" stroke-width="1.2"/>
+              </svg>
+            </button>
+          </div>
+          <!-- legacy SVG kept for the tour map overlay; hidden in detail view -->
+          <svg class="dm-map" viewBox="0 0 320 540" preserveAspectRatio="xMidYMid meet" aria-hidden="true" style="display:none">
             <!-- compass -->
             <g transform="translate(286,38)" opacity="0.55">
               <text font-size="10" font-weight="800" fill="rgba(245,243,236,0.65)" text-anchor="middle" x="3" y="0">N</text>
@@ -1941,9 +2307,25 @@
 
         <!-- BETWEEN / APPROACHING — quiet single-line indicator in the center -->
         <div class="walking-quiet" id="walking-quiet">
+          <div class="wq-dots" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
           <div class="wq-eyebrow" id="wq-eyebrow">Walking to</div>
           <div class="wq-name" id="wq-name">Layered Cliffs</div>
           <div class="wq-distance" id="wq-distance">0.4 mi · about 12 minutes</div>
+        </div>
+
+        <!-- COMPLETE — shown after the last stop -->
+        <div class="tour-complete" id="tour-complete">
+          <div class="tc-check" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+              <path d="M5 11.5L9.5 16L17 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="tc-eyebrow">Tour complete</div>
+          <div class="tc-title">You walked the loop.</div>
+          <div class="tc-stats">2.0 mi · 5 stops · 1 hr 12 min</div>
+          <button class="tc-journal" id="tc-journal">Open journal</button>
         </div>
 
         <div class="lyric" id="lyric">
@@ -1986,96 +2368,16 @@
               </svg>
             </button>
             <div class="tm-title">
-              <div class="tm-name">Kildoo Trail</div>
-              <div class="tm-loc">Stop 3 of 5 · Kildoo Falls</div>
+              <div class="tm-name" id="tm-name">Kildoo Trail</div>
+              <div class="tm-loc" id="tm-loc">Stop 1 of 5</div>
             </div>
             <div style="width:36px;"></div>
           </div>
 
           <div class="tm-canvas">
-            <svg class="dm-map" viewBox="0 0 320 540" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-              <g transform="translate(286,38)" opacity="0.55">
-                <text font-size="10" font-weight="800" fill="rgba(245,243,236,0.65)" text-anchor="middle" x="3" y="0">N</text>
-                <line x1="3" y1="6" x2="3" y2="22" stroke="rgba(245,243,236,0.5)" stroke-width="1"/>
-                <polygon points="0,16 3,22 6,16" fill="rgba(245,243,236,0.5)"/>
-              </g>
-
-              <g transform="translate(20,510)" opacity="0.6">
-                <line x1="0" y1="0" x2="60" y2="0" stroke="rgba(245,243,236,0.5)" stroke-width="1.4"/>
-                <line x1="0" y1="-3" x2="0" y2="3" stroke="rgba(245,243,236,0.5)" stroke-width="1.2"/>
-                <line x1="60" y1="-3" x2="60" y2="3" stroke="rgba(245,243,236,0.5)" stroke-width="1.2"/>
-                <text x="30" y="14" font-size="9" font-weight="700" fill="rgba(245,243,236,0.55)" text-anchor="middle" letter-spacing="0.6">¼ MILE</text>
-              </g>
-
-              <g opacity="0.18" fill="rgba(245,243,236,0.6)">
-                <circle cx="50" cy="80" r="0.8"/>
-                <circle cx="80" cy="200" r="0.8"/>
-                <circle cx="60" cy="380" r="0.8"/>
-                <circle cx="260" cy="100" r="0.8"/>
-                <circle cx="270" cy="240" r="0.8"/>
-                <circle cx="250" cy="400" r="0.8"/>
-              </g>
-
-              <!-- Creek -->
-              <path d="M160,52 Q150,100 158,160 Q166,230 152,300 Q148,370 162,440 Q170,490 160,510"
-                    stroke="rgba(140,180,200,0.18)" stroke-width="14" fill="none" stroke-linecap="round" opacity="0.6"/>
-              <path d="M160,52 Q150,100 158,160 Q166,230 152,300 Q148,370 162,440 Q170,490 160,510"
-                    stroke="rgba(140,180,200,0.55)" stroke-width="2.8" fill="none" stroke-linecap="round"/>
-
-              <!-- East trail — passed portion (WP1→WP2→WP3) lime, rest dashed gray -->
-              <path d="M160,80 Q195,105 200,170 Q207,225 210,280"
-                    stroke="rgba(217,245,113,0.7)" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-              <path d="M210,280 Q215,350 195,415 Q175,475 160,498"
-                    stroke="rgba(245,243,236,0.40)" stroke-width="1.5" fill="none"
-                    stroke-dasharray="3,3" stroke-linecap="round"/>
-
-              <!-- West trail — upcoming -->
-              <path d="M160,80 Q125,105 122,180 Q118,240 125,295 Q130,360 140,420 Q150,475 160,498"
-                    stroke="rgba(245,243,236,0.30)" stroke-width="1.5" fill="none"
-                    stroke-dasharray="3,3" stroke-linecap="round"/>
-
-              <!-- WP1 — passed -->
-              <circle cx="160" cy="80" r="13" fill="rgba(217,245,113,0.18)" stroke="rgba(217,245,113,0.6)" stroke-width="1.3"/>
-              <text x="160" y="80" font-size="12" font-weight="800" fill="rgba(217,245,113,0.85)"
-                    text-anchor="middle" dominant-baseline="middle">1</text>
-              <text x="160" y="120" font-size="12" font-weight="700" letter-spacing="0.4"
-                    fill="rgba(245,243,236,0.55)" text-anchor="middle" dominant-baseline="middle"
-                    paint-order="stroke" stroke="#0a0c0a" stroke-width="3" stroke-linejoin="round">Covered Bridge &amp; Mill</text>
-
-              <!-- WP2 — passed -->
-              <circle cx="200" cy="170" r="13" fill="rgba(217,245,113,0.18)" stroke="rgba(217,245,113,0.6)" stroke-width="1.3"/>
-              <text x="200" y="170" font-size="12" font-weight="800" fill="rgba(217,245,113,0.85)"
-                    text-anchor="middle" dominant-baseline="middle">2</text>
-              <text x="222" y="170" font-size="12" font-weight="700" letter-spacing="0.4"
-                    fill="rgba(245,243,236,0.55)" text-anchor="start" dominant-baseline="middle"
-                    paint-order="stroke" stroke="#0a0c0a" stroke-width="3" stroke-linejoin="round">Layered Cliffs</text>
-
-              <!-- WP3 — ACTIVE (Kildoo Falls) -->
-              <circle cx="210" cy="280" r="24" fill="#d9f571" opacity="0.20" class="pin-halo"/>
-              <circle cx="210" cy="280" r="16" fill="#d9f571" opacity="0.36" class="pin-halo-2"/>
-              <circle cx="210" cy="280" r="13" fill="#d9f571"/>
-              <text x="210" y="280" font-size="13" font-weight="800" fill="#1a1f0a"
-                    text-anchor="middle" dominant-baseline="middle">3</text>
-              <text x="232" y="280" font-size="12" font-weight="700" letter-spacing="0.4"
-                    fill="rgba(217,245,113,0.95)" text-anchor="start" dominant-baseline="middle"
-                    paint-order="stroke" stroke="#0a0c0a" stroke-width="3" stroke-linejoin="round">Kildoo Falls</text>
-
-              <!-- WP4 — Eckert Bridge (south crossing, upcoming) -->
-              <circle cx="160" cy="498" r="13" fill="rgba(15,16,13,0.95)" stroke="rgba(245,243,236,0.55)" stroke-width="1.3"/>
-              <text x="160" y="498" font-size="12" font-weight="800" fill="rgba(245,243,236,0.85)"
-                    text-anchor="middle" dominant-baseline="middle">4</text>
-              <text x="160" y="474" font-size="12" font-weight="700" letter-spacing="0.4"
-                    fill="rgba(245,243,236,0.7)" text-anchor="middle" dominant-baseline="middle"
-                    paint-order="stroke" stroke="#0a0c0a" stroke-width="3" stroke-linejoin="round">Eckert Bridge</text>
-
-              <!-- WP5 — Slippery Rock (west side, last stop on the return) -->
-              <circle cx="125" cy="295" r="13" fill="rgba(15,16,13,0.95)" stroke="rgba(245,243,236,0.55)" stroke-width="1.3"/>
-              <text x="125" y="295" font-size="12" font-weight="800" fill="rgba(245,243,236,0.85)"
-                    text-anchor="middle" dominant-baseline="middle">5</text>
-              <text x="103" y="295" font-size="12" font-weight="700" letter-spacing="0.4"
-                    fill="rgba(245,243,236,0.7)" text-anchor="end" dominant-baseline="middle"
-                    paint-order="stroke" stroke="#0a0c0a" stroke-width="3" stroke-linejoin="round">Slippery Rock</text>
-            </svg>
+            <!-- Leaflet map mirrors the detail-view map; rebuildTourMap() swaps
+                 the polyline + markers and highlights the active stop. -->
+            <div id="tour-leaflet" class="dm-leaflet"></div>
           </div>
 
           <div class="tm-foot">
@@ -2269,6 +2571,20 @@
       </div>
     </div>
 
+    <!-- iOS-style alert: shown when user taps Begin but GPS is off / off-trail -->
+    <div class="ios-alert" id="loc-alert" aria-hidden="true">
+      <div class="ios-alert-card" role="dialog" aria-labelledby="loc-alert-title">
+        <div class="ios-alert-content">
+          <div class="ios-alert-title" id="loc-alert-title">You're not at this trail</div>
+          <div class="ios-alert-msg" id="loc-alert-msg">The tour normally activates as you walk by each stop. It'll play in time sequence instead.</div>
+        </div>
+        <div class="ios-alert-actions">
+          <button class="ios-alert-btn cancel" id="loc-alert-cancel">Cancel</button>
+          <button class="ios-alert-btn primary" id="loc-alert-start">Begin</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -2299,30 +2615,452 @@
       stopTourCycle();
       stopLyricLoop();
     }
+    if (name === 'detail') {
+      // initialize / refresh the Leaflet map after the view becomes visible
+      setTimeout(initDetailMap, 80);
+    }
   }
 
-  // ---------- picker → detail ----------
+  // ---------- Trail data: 3 trails with stops, paths, narration, images ----------
+  const TRAILS = {
+    kildoo: {
+      // 2.0 mi loop, ~180 ft elevation, Moderate, ~1 hr (DCNR / AllTrails)
+      name: 'Kildoo Trail',
+      location: 'McConnells Mill State Park',
+      distance: '2.0', distanceUnit: 'mi',
+      timeNum: '1', timeUnit: 'hr',
+      difficulty: 'Moderate',
+      stops: [
+        { num: 1, name: 'Covered Bridge & Mill', lat: 40.9528830, lng: -80.1700386,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/7/77/McConnells_Mill_State_Park_Bridge.jpg',
+          sentences: [
+            "The covered bridge dates to 1874.",
+            "Howe truss design — one of two left in Pennsylvania.",
+            "The mill ground grain here until 1928.",
+          ]},
+        { num: 2, name: 'Layered Cliffs', lat: 40.9498610, lng: -80.1715602,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/c/cc/Woodlands_around_McConnell%27s_Mill_State_Park.jpg',
+          sentences: [
+            "Sandstone laid down 320 million years ago.",
+            "The orange streaks are iron oxide.",
+            "Groundwater carries it out of the rock.",
+          ]},
+        { num: 3, name: 'Kildoo Falls', lat: 40.9465772, lng: -80.1733358,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/2/22/Hell%27s_Hollow_Falls.JPG',
+          sentences: [
+            "The water has been falling here a long time.",
+            "Listen. The creek does most of the work.",
+            "Above you, hemlocks lean over the gorge.",
+            "Some of them are three centuries old.",
+          ]},
+        { num: 4, name: 'Slippery Rock', lat: 40.9429821, lng: -80.1750093,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/2/26/McConnells_Mill_State_Park_Scenery_01.jpg',
+          sentences: [
+            "An eighty-ton sandstone boulder in the creek.",
+            "It gave the waterway its name.",
+            "Algae makes it slick — hence slippery.",
+          ]},
+        { num: 5, name: 'Eckert Bridge', lat: 40.9403631, lng: -80.1760979,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/3/34/McConnells_Mill_Bridge_and_Creek.jpg',
+          sentences: [
+            "Eckert Bridge crosses Slippery Rock Creek here.",
+            "From here the trail returns north along the western bank.",
+            "The creek narrows and quickens through the gorge.",
+          ]},
+      ],
+      // Path traced from a single OSM way: "Kildoo Trail" (east bank).
+      // Treated as an out-and-back trace; the actual trail is a 2 mi loop, but
+      // for visual fidelity we draw only the east bank so the polyline matches
+      // the OSM tile rendering exactly. Every stop coord is a vertex.
+      path: [
+        [40.9528830, -80.1700386], [40.9524726, -80.1702225], [40.9520972, -80.1705409],
+        [40.9519286, -80.1706393], [40.9517501, -80.1707987], [40.9514500, -80.1709961],
+        [40.9507056, -80.1712836], [40.9503944, -80.1713490], [40.9501791, -80.1713475],
+        [40.9501245, -80.1713633], [40.9498610, -80.1715602], [40.9497571, -80.1716061],
+        [40.9496678, -80.1716247], [40.9495727, -80.1716975], [40.9494733, -80.1717691],
+        [40.9493635, -80.1719394], [40.9492600, -80.1720198], [40.9492019, -80.1721223],
+        [40.9491388, -80.1721869], [40.9490004, -80.1723537], [40.9488547, -80.1725217],
+        [40.9487005, -80.1726453], [40.9485759, -80.1726847], [40.9484663, -80.1726778],
+        [40.9483250, -80.1726855], [40.9482341, -80.1727043], [40.9479536, -80.1727726],
+        [40.9477763, -80.1728682], [40.9476256, -80.1729145], [40.9475071, -80.1730353],
+        [40.9473174, -80.1731258], [40.9471888, -80.1731415], [40.9470092, -80.1732296],
+        [40.9469180, -80.1733093], [40.9468352, -80.1733491], [40.9467678, -80.1733105],
+        [40.9466520, -80.1733117], [40.9465772, -80.1733358], [40.9464012, -80.1734095],
+        [40.9463100, -80.1734216], [40.9462141, -80.1734634], [40.9460426, -80.1735018],
+        [40.9459794, -80.1735417], [40.9458577, -80.1735773], [40.9457689, -80.1735570],
+        [40.9456444, -80.1735999], [40.9455541, -80.1736138], [40.9454903, -80.1736341],
+        [40.9453691, -80.1737314], [40.9452952, -80.1737375], [40.9449824, -80.1739074],
+        [40.9448961, -80.1739330], [40.9448492, -80.1739792], [40.9447777, -80.1740219],
+        [40.9447156, -80.1740816], [40.9445913, -80.1741489], [40.9444746, -80.1741971],
+        [40.9443003, -80.1742991], [40.9440836, -80.1743691], [40.9436875, -80.1746211],
+        [40.9435443, -80.1746826], [40.9434115, -80.1747013], [40.9433161, -80.1748430],
+        [40.9429821, -80.1750093], [40.9429034, -80.1751491], [40.9427880, -80.1753258],
+        [40.9427325, -80.1753890], [40.9424734, -80.1755406], [40.9423125, -80.1755749],
+        [40.9420405, -80.1756967], [40.9419799, -80.1757479], [40.9417151, -80.1758867],
+        [40.9415080, -80.1759416], [40.9414119, -80.1759407], [40.9412146, -80.1759919],
+        [40.9411411, -80.1760534], [40.9406894, -80.1759797], [40.9405775, -80.1760499],
+        [40.9405369, -80.1760522], [40.9404755, -80.1760524], [40.9404088, -80.1760730],
+        [40.9403631, -80.1760979],
+      ],
+      segmentDistances: [
+        '0.5 mi · about 13 minutes',
+        '0.4 mi · about 12 minutes',
+        '0.5 mi · about 14 minutes',
+        '0.4 mi · about 11 minutes',
+        '0.4 mi · back to the mill',
+      ],
+    },
+    oldfield: {
+      // 2.3 mi loop at the Wildflower Reserve, Raccoon Creek State Park.
+      // Polyline assembled from two OSM ways: Old Field Trail [Red] (W -> E)
+      // and Jennings Trail [Blue] (E -> W), joined at the east-end junction
+      // and closed back to the trailhead in the southwest.
+      name: 'Old Field & Jennings Trail Loop',
+      location: 'Wildflower Reserve',
+      distance: '2.3', distanceUnit: 'mi',
+      timeNum: '50', timeUnit: 'min',
+      difficulty: 'Easy',
+      stops: [
+        { num: 1, name: 'Trailhead', lat: 40.5085885, lng: -80.3645201,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/b/b6/Jennings_Environmental_Education_Center.jpg',
+          sentences: [
+            "You're at the southwest entrance to the Wildflower Reserve loop.",
+            "These woods hold one of the richest spring wildflower displays in Pennsylvania.",
+            "Trilliums, Virginia bluebells, and Dutchman's breeches all bloom here.",
+          ]},
+        { num: 2, name: 'Wildflower Meadow', lat: 40.5091497, lng: -80.3612003,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/6/60/Pittsburgh_frick_park_trail.jpg',
+          sentences: [
+            "A sunlit clearing along the Old Field Trail.",
+            "In late April, the forest floor here turns white with large-flowered trillium.",
+            "Wood thrushes and ovenbirds sing from the surrounding canopy.",
+          ]},
+        { num: 3, name: 'East Overlook', lat: 40.5086195, lng: -80.3552001,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/b/b6/Jennings_Environmental_Education_Center.jpg',
+          sentences: [
+            "The eastern turn of the loop, where Old Field meets Jennings Trail.",
+            "The slope below drops down toward Raccoon Creek.",
+            "On still mornings, mist rises through the trees in the valley.",
+          ]},
+        { num: 4, name: 'Forest Glen', lat: 40.5009533, lng: -80.3614658,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/c/cc/Woodlands_around_McConnell%27s_Mill_State_Park.jpg',
+          sentences: [
+            "Deep into the Jennings Trail, the canopy thickens overhead.",
+            "Look for jack-in-the-pulpit and wild ginger close to the path.",
+            "Pileated woodpeckers work the dead snags here year-round.",
+          ]},
+        { num: 5, name: 'Loop Close', lat: 40.5068290, lng: -80.3636062,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/c/cc/Woodlands_around_McConnell%27s_Mill_State_Park.jpg',
+          sentences: [
+            "The last stretch back toward the trailhead.",
+            "The understory opens up — sugar maple, beech, and red oak.",
+            "A few quiet minutes and the loop is closed.",
+          ]},
+      ],
+      // Path: 180 vertices. Old Field Trail [Red] (W->E, 57 nodes) +
+      // Jennings spur (4 nodes, skipping shared endpoint) + Jennings Trail
+      // [Blue] reversed (118 nodes, skipping shared endpoint) + close back
+      // to trailhead. Every stop is a vertex on this polyline.
+      path: [
+        [40.5085885, -80.3645201], [40.5088193, -80.3644860], [40.5090111, -80.3645557],
+        [40.5090967, -80.3646523], [40.5090784, -80.3648105], [40.5091212, -80.3648347],
+        [40.5092089, -80.3647810], [40.5093088, -80.3647542], [40.5094883, -80.3648400],
+        [40.5096901, -80.3649071], [40.5097656, -80.3648374], [40.5098778, -80.3645772],
+        [40.5098655, -80.3643304], [40.5098044, -80.3640622], [40.5096983, -80.3638449],
+        [40.5096330, -80.3637671], [40.5094862, -80.3636840], [40.5093843, -80.3635499],
+        [40.5092680, -80.3634426], [40.5091763, -80.3633219], [40.5091538, -80.3631530],
+        [40.5091192, -80.3629008], [40.5090682, -80.3626192], [40.5090295, -80.3623348],
+        [40.5089886, -80.3621578], [40.5090682, -80.3620130], [40.5090845, -80.3617153],
+        [40.5091130, -80.3614283], [40.5091497, -80.3612003], [40.5093068, -80.3611118],
+        [40.5093741, -80.3610259], [40.5094209, -80.3608703], [40.5095005, -80.3607202],
+        [40.5095617, -80.3605351], [40.5095820, -80.3603205], [40.5095596, -80.3600952],
+        [40.5095148, -80.3599906], [40.5093883, -80.3598914], [40.5093724, -80.3598082],
+        [40.5093598, -80.3596312], [40.5094781, -80.3593951], [40.5094556, -80.3591725],
+        [40.5094495, -80.3590170], [40.5095250, -80.3587836], [40.5095413, -80.3585851],
+        [40.5094577, -80.3584027], [40.5094597, -80.3582472], [40.5096269, -80.3580809],
+        [40.5097207, -80.3579334], [40.5098372, -80.3577388], [40.5098574, -80.3572601],
+        [40.5095739, -80.3568444], [40.5093129, -80.3562543], [40.5089988, -80.3559485],
+        [40.5089152, -80.3557702], [40.5088734, -80.3557487], [40.5088156, -80.3557757],
+        [40.5087867, -80.3554764], [40.5087867, -80.3553370], [40.5087144, -80.3552324],
+        [40.5086195, -80.3552001], [40.5084859, -80.3552552], [40.5083911, -80.3553021],
+        [40.5082698, -80.3553987], [40.5081505, -80.3554899], [40.5079924, -80.3558131],
+        [40.5079414, -80.3560384], [40.5079007, -80.3562368], [40.5078558, -80.3565923],
+        [40.5077910, -80.3570347], [40.5078079, -80.3573889], [40.5078435, -80.3579789],
+        [40.5078772, -80.3582646], [40.5078986, -80.3586441], [40.5078476, -80.3591296],
+        [40.5077701, -80.3597908], [40.5076916, -80.3601650], [40.5075632, -80.3603393],
+        [40.5075672, -80.3605753], [40.5074164, -80.3608811], [40.5072634, -80.3612566],
+        [40.5071308, -80.3617179], [40.5070166, -80.3619272], [40.5067781, -80.3621525],
+        [40.5065965, -80.3623188], [40.5064088, -80.3625306], [40.5061723, -80.3625763],
+        [40.5060418, -80.3626809], [40.5058338, -80.3628069], [40.5056054, -80.3627425],
+        [40.5051302, -80.3628069], [40.5048834, -80.3629357], [40.5047141, -80.3630350],
+        [40.5044470, -80.3629893], [40.5041145, -80.3629115], [40.5037413, -80.3628659],
+        [40.5034966, -80.3626459], [40.5032825, -80.3626031], [40.5031988, -80.3625602],
+        [40.5031172, -80.3625011], [40.5030266, -80.3624375], [40.5028562, -80.3624234],
+        [40.5026706, -80.3622839], [40.5025176, -80.3621042], [40.5023096, -80.3619245],
+        [40.5020955, -80.3617018], [40.5019813, -80.3616160], [40.5019099, -80.3614685],
+        [40.5017732, -80.3611359], [40.5016835, -80.3608730], [40.5016019, -80.3607202],
+        [40.5014755, -80.3605780], [40.5012633, -80.3605512], [40.5011675, -80.3605619],
+        [40.5010736, -80.3606129], [40.5010227, -80.3607067], [40.5009982, -80.3608382],
+        [40.5009676, -80.3609750], [40.5009595, -80.3611761], [40.5009533, -80.3614658],
+        [40.5009798, -80.3617233], [40.5009595, -80.3619808], [40.5009941, -80.3622007],
+        [40.5009962, -80.3623483], [40.5009595, -80.3624502], [40.5009880, -80.3625494],
+        [40.5010512, -80.3626353], [40.5011185, -80.3626889], [40.5010868, -80.3629763],
+        [40.5010920, -80.3631529], [40.5011083, -80.3634104], [40.5011767, -80.3634386],
+        [40.5013918, -80.3634024], [40.5016080, -80.3634077], [40.5019058, -80.3632522],
+        [40.5020302, -80.3632817], [40.5021750, -80.3633970], [40.5023728, -80.3636357],
+        [40.5025074, -80.3638557], [40.5027012, -80.3639174], [40.5028440, -80.3638449],
+        [40.5029500, -80.3638449], [40.5030663, -80.3639683], [40.5031662, -80.3639201],
+        [40.5032763, -80.3637993], [40.5034293, -80.3637698], [40.5035129, -80.3637993],
+        [40.5036638, -80.3639120], [40.5037780, -80.3639549], [40.5039330, -80.3639174],
+        [40.5039963, -80.3639764], [40.5040840, -80.3640380], [40.5041553, -80.3640273],
+        [40.5042186, -80.3640005], [40.5043226, -80.3639764], [40.5043939, -80.3639361],
+        [40.5045653, -80.3638423], [40.5047183, -80.3638100], [40.5048141, -80.3637698],
+        [40.5048467, -80.3640300], [40.5048549, -80.3642553], [40.5049119, -80.3643680],
+        [40.5050017, -80.3644216], [40.5050996, -80.3643841], [40.5051730, -80.3643036],
+        [40.5053871, -80.3640837], [40.5055299, -80.3639897], [40.5057012, -80.3639442],
+        [40.5057726, -80.3639281], [40.5058603, -80.3638557], [40.5058786, -80.3637242],
+        [40.5060357, -80.3635418], [40.5063049, -80.3633031], [40.5064109, -80.3632790],
+        [40.5064803, -80.3633434], [40.5065639, -80.3634506], [40.5066125, -80.3634819],
+        [40.5068290, -80.3636062], [40.5070437, -80.3638191], [40.5085885, -80.3645201],
+      ],
+      segmentDistances: [
+        '0.3 mi · about 7 minutes',
+        '0.4 mi · about 9 minutes',
+        '0.9 mi · about 20 minutes',
+        '0.6 mi · about 12 minutes',
+        '0.1 mi · final stretch',
+      ],
+    },
+    tranquil: {
+      // 1.1 mi out-and-back (~0.55 mi one way), Easy, ~30 min (AllTrails)
+      name: 'Tranquil Trail',
+      location: 'Frick Park',
+      distance: '1.1', distanceUnit: 'mi',
+      timeNum: '30', timeUnit: 'min',
+      difficulty: 'Easy',
+      stops: [
+        { num: 1, name: 'Trailhead', lat: 40.4460114, lng: -79.9030646,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/6/60/Pittsburgh_frick_park_trail.jpg',
+          sentences: [
+            "The trail begins off Beechwood Boulevard.",
+            "Frick Park is Pittsburgh's largest historic park.",
+            "The forest here regrew over a century after logging.",
+          ]},
+        { num: 2, name: 'Fern Hollow Creek', lat: 40.4391538, lng: -79.9001871,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/6/60/Pittsburgh_frick_park_trail.jpg',
+          sentences: [
+            "Fern Hollow Creek runs alongside the trail.",
+            "It empties into Nine Mile Run downstream.",
+            "The valley was carved during the last glacial period.",
+          ]},
+        { num: 3, name: 'Forest Grove', lat: 40.4296463, lng: -79.9008283,
+          img: 'https://upload.wikimedia.org/wikipedia/commons/c/cc/Woodlands_around_McConnell%27s_Mill_State_Park.jpg',
+          sentences: [
+            "Mature oaks and tulip poplars stand here.",
+            "Some of these trees are over 150 years old.",
+            "The understory is mostly spicebush and witch hazel.",
+          ]},
+      ],
+      // Path traced from OSM way "Tranquil Trail" in Frick Park.
+      path: [
+        [40.4460114, -79.9030646], [40.4459570, -79.9037673], [40.4457599, -79.9039644],
+        [40.4453903, -79.9038104], [40.4449530, -79.9023937], [40.4444020, -79.9019957],
+        [40.4439121, -79.9020426], [40.4429959, -79.9020431], [40.4419657, -79.9017159],
+        [40.4406303, -79.9007271], [40.4391538, -79.9001871], [40.4377749, -79.8990330],
+        [40.4366230, -79.8989346], [40.4347568, -79.8991703], [40.4338944, -79.8994021],
+        [40.4330023, -79.9000810], [40.4322765, -79.9004010], [40.4313517, -79.9006325],
+        [40.4302675, -79.9007073], [40.4296463, -79.9008283],
+      ],
+      segmentDistances: [
+        '0.3 mi · about 8 minutes',
+        '0.3 mi · about 7 minutes',
+        '— turn around at the grove',
+      ],
+    },
+  };
+
+  let selectedTrail = 'kildoo';
+
+  function computeStopPositions(n) {
+    if (n <= 1) return [50];
+    const start = 12, end = 88;
+    return Array.from({length: n}, (_, i) => start + (i / (n - 1)) * (end - start));
+  }
+
+  function applyTrailToDetail() {
+    const t = TRAILS[selectedTrail];
+    const nameEl = document.querySelector('.dm-name');
+    const locEl  = document.querySelector('.dm-loc');
+    const stats  = document.querySelector('.dm-stats');
+    if (nameEl) nameEl.textContent = t.name;
+    if (locEl)  locEl.textContent  = t.location;
+    if (stats) stats.innerHTML = `
+      <span><b>${t.distance}</b> ${t.distanceUnit}</span><span class="d-dot"></span>
+      <span><b>${t.timeNum}</b> ${t.timeUnit}</span><span class="d-dot"></span>
+      <span><b>${t.stops.length}</b> stops</span><span class="d-dot"></span>
+      <span>${t.difficulty}</span>
+    `;
+  }
+
+  function selectTrail(id) {
+    if (!TRAILS[id]) return;
+    selectedTrail = id;
+    applyTrailToDetail();
+    // sync the runtime so when user begins, the tour reflects this trail
+    if (typeof syncTrailRuntime === 'function') syncTrailRuntime();
+  }
+
+  // ---------- Detail trail map (Leaflet + CARTO Dark Matter) ----------
+  let detailMap = null;
+  let detailTrailLayer = null;
+  let detailMarkerLayers = [];
+  let detailLoadedTrail = null;
+
+  function initDetailMap() {
+    if (typeof L === 'undefined') return;
+    if (!detailMap) {
+      detailMap = L.map('detail-leaflet', {
+        zoomControl: false,
+        attributionControl: true,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        keyboard: false,
+      });
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
+        subdomains: 'abcd',
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+      }).addTo(detailMap);
+    }
+    detailMap.invalidateSize();
+    if (detailLoadedTrail !== selectedTrail) {
+      rebuildDetailMap();
+    }
+  }
+
+  function rebuildDetailMap() {
+    if (!detailMap) return;
+    detailLoadedTrail = selectedTrail;
+    const t = TRAILS[selectedTrail];
+    if (detailTrailLayer) detailMap.removeLayer(detailTrailLayer);
+    detailMarkerLayers.forEach(m => detailMap.removeLayer(m));
+    detailMarkerLayers = [];
+    detailTrailLayer = L.polyline(t.path, {
+      color: '#d9f571',
+      weight: 4,
+      opacity: 0.95,
+      lineJoin: 'round',
+      lineCap: 'round',
+      className: 'kildoo-trail',
+    }).addTo(detailMap);
+    t.stops.forEach((s, i) => {
+      const icon = L.divIcon({
+        className: 'wp-icon ' + (i === 0 ? 'wp-active' : ''),
+        html: `<div class="wp-pin">${s.num}</div><div class="wp-label">${s.name}</div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
+      });
+      const marker = L.marker([s.lat, s.lng], { icon, riseOnHover: true }).addTo(detailMap);
+      detailMarkerLayers.push(marker);
+    });
+    detailMap.fitBounds(L.latLngBounds(t.path), { padding: [60, 60] });
+  }
+
+  // ---------- In-tour map (same Leaflet basemap + polyline as detail view) ----------
+  // Re-uses the .tm-canvas / .dm-leaflet styling. Highlights whichever stop is
+  // currently active in the tour state machine, rather than always stop 1.
+  let tourLeaflet = null;
+  let tourTrailLayer = null;
+  let tourMarkerLayers = [];
+
+  function initTourMap(activeIdx) {
+    if (typeof L === 'undefined') return;
+    if (!tourLeaflet) {
+      tourLeaflet = L.map('tour-leaflet', {
+        zoomControl: false,
+        attributionControl: true,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        keyboard: false,
+      });
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
+        subdomains: 'abcd',
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+      }).addTo(tourLeaflet);
+    }
+    tourLeaflet.invalidateSize();
+    rebuildTourMap(activeIdx);
+  }
+
+  function rebuildTourMap(activeIdx) {
+    if (!tourLeaflet) return;
+    const t = TRAILS[selectedTrail];
+    if (tourTrailLayer) tourLeaflet.removeLayer(tourTrailLayer);
+    tourMarkerLayers.forEach(m => tourLeaflet.removeLayer(m));
+    tourMarkerLayers = [];
+    tourTrailLayer = L.polyline(t.path, {
+      color: '#d9f571',
+      weight: 4,
+      opacity: 0.95,
+      lineJoin: 'round',
+      lineCap: 'round',
+      className: 'kildoo-trail',
+    }).addTo(tourLeaflet);
+    t.stops.forEach((s, i) => {
+      const icon = L.divIcon({
+        className: 'wp-icon ' + (i === activeIdx ? 'wp-active' : ''),
+        html: `<div class="wp-pin">${s.num}</div><div class="wp-label">${s.name}</div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
+      });
+      const marker = L.marker([s.lat, s.lng], { icon, riseOnHover: true }).addTo(tourLeaflet);
+      tourMarkerLayers.push(marker);
+    });
+    tourLeaflet.fitBounds(L.latLngBounds(t.path), { padding: [40, 40] });
+  }
+
+  // ---------- picker → detail (with badge journal-link override) ----------
   document.querySelectorAll('.t-card').forEach(card => {
     card.addEventListener('click', e => {
-      // Don't navigate if the user clicked the download button
       if (e.target.closest('.dl-btn')) return;
+      if (e.target.closest('[data-journal-link]')) {
+        e.stopPropagation();
+        go('journal');
+        return;
+      }
+      const trailId = card.dataset.trail;
+      if (trailId && TRAILS[trailId]) selectTrail(trailId);
       go('detail');
     });
   });
 
-  // ---------- download flow on Kildoo card ----------
-  let kildooDownloaded = false;
-
-  document.getElementById('dl-kildoo').addEventListener('click', e => {
-    e.stopPropagation();
-    const btn = e.currentTarget;
-    if (btn.dataset.state !== 'idle') return;
-    runDownload(btn);
+  // Profile button (placeholder action — could open settings/account)
+  const profileBtn = document.getElementById('profile-btn');
+  if (profileBtn) profileBtn.addEventListener('click', () => {
+    profileBtn.animate(
+      [{transform:'scale(1)'},{transform:'scale(0.92)'},{transform:'scale(1)'}],
+      { duration: 240, easing: 'ease-out' }
+    );
   });
+
+  // ---------- download flow (shared by Kildoo & Tranquil) ----------
+  function attachDownload(btnId) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (btn.dataset.state !== 'idle') return;
+      runDownload(btn);
+    });
+  }
+  attachDownload('dl-kildoo');
+  attachDownload('dl-tranquil');
 
   function runDownload(btn) {
     btn.dataset.state = 'downloading';
-    const fill = btn.querySelector('.dl-fill');
     const text = btn.querySelector('.dl-text');
     const icon = btn.querySelector('.dl-icon');
     icon.style.display = 'none';
@@ -2340,8 +3078,7 @@
   }
 
   function completeDownload(btn) {
-    kildooDownloaded = true;
-    const wrap = document.getElementById('kildoo-status');
+    const wrap = btn.parentElement;
     wrap.innerHTML = '<div class="badge ready"><span class="dot"></span>Downloaded</div>';
   }
 
@@ -2350,64 +3087,31 @@
     e.stopPropagation();
     go('picker');
   });
-  document.getElementById('begin').addEventListener('click', () => go('walking'));
+  // Tapping Begin pops the iOS-style location alert directly. Inlined for
+  // robustness — doesn't depend on any other helper being initialized first.
+  // (Native iOS: gate on CLLocationManager + real distance check. This HTML
+  // mockup is for desktop preview, so we always surface the alert.)
+  document.getElementById('begin').addEventListener('click', () => {
+    const a = document.getElementById('loc-alert');
+    const t = document.getElementById('loc-alert-title');
+    const m = document.getElementById('loc-alert-msg');
+    if (!a || !t || !m) { console.error('loc-alert nodes missing'); return; }
+    t.textContent = "Not on the trail yet?";
+    m.innerHTML = "Location usually guides the tour.<br>Here, it'll play in order.";
+    a.classList.add('is-shown');
+    a.setAttribute('aria-hidden', 'false');
+  });
 
   // ---------- journal → picker ----------
   document.getElementById('close-journal').addEventListener('click', () => go('picker'));
-  document.getElementById('open-journal').addEventListener('click', () => go('journal'));
 
-  // ---------- tour data: per-stop content ----------
-  const stopData = [
-    {
-      num: 1, name: 'Covered Bridge & Mill',
-      img: 'https://upload.wikimedia.org/wikipedia/commons/7/77/McConnells_Mill_State_Park_Bridge.jpg',
-      sentences: [
-        "The covered bridge dates to 1874.",
-        "Howe truss design — one of two left in Pennsylvania.",
-        "The mill ground grain here until 1928.",
-      ]
-    },
-    {
-      num: 2, name: 'Layered Cliffs',
-      img: 'https://upload.wikimedia.org/wikipedia/commons/c/cc/Woodlands_around_McConnell%27s_Mill_State_Park.jpg',
-      sentences: [
-        "Sandstone laid down 320 million years ago.",
-        "The orange streaks are iron oxide.",
-        "Groundwater carries it out of the rock.",
-      ]
-    },
-    {
-      num: 3, name: 'Kildoo Falls',
-      img: 'https://upload.wikimedia.org/wikipedia/commons/2/22/Hell%27s_Hollow_Falls.JPG',
-      sentences: [
-        "The water has been falling here a long time.",
-        "Listen. The creek does most of the work.",
-        "Above you, hemlocks lean over the gorge.",
-        "Some of them are three centuries old.",
-      ]
-    },
-    {
-      num: 4, name: 'Eckert Bridge',
-      img: 'https://upload.wikimedia.org/wikipedia/commons/3/34/McConnells_Mill_Bridge_and_Creek.jpg',
-      sentences: [
-        "Eckert Bridge crosses Slippery Rock Creek here.",
-        "The trail returns north along the western bank.",
-        "The creek narrows and quickens through the gorge.",
-      ]
-    },
-    {
-      num: 5, name: 'Slippery Rock',
-      img: 'https://upload.wikimedia.org/wikipedia/commons/2/26/McConnells_Mill_State_Park_Scenery_01.jpg',
-      sentences: [
-        "An eighty-ton sandstone boulder in the creek.",
-        "It gave the waterway its name.",
-        "Algae makes it slick — hence slippery.",
-      ]
-    },
-  ];
+  // ---------- tour data: per-stop content (driven by selectedTrail) ----------
+  // stopData is reassigned whenever selectedTrail changes. Always points at the
+  // active trail's stops array so the rest of the tour code reads from one place.
+  let stopData = TRAILS[selectedTrail].stops;
 
   // ---------- lyric loop ----------
-  let trailSentences = stopData[2].sentences.slice(); // start at Kildoo Falls
+  let trailSentences = stopData[0].sentences.slice(); // start at first stop
   const photoSentences = [
     "A small cave worn into the sandstone wall.",
     "This rock is part of the Sharon Conglomerate.",
@@ -2471,14 +3175,31 @@
   const AT_STOP_MS     = 9000;
   const BETWEEN_MS     = 5000;
   const APPROACHING_MS = 3000;
-  const SEGMENT_DISTANCES = ['0.4 mi · about 12 minutes',
-                             '0.4 mi · about 11 minutes',
-                             '0.3 mi · about 9 minutes',
-                             '0.5 mi · about 14 minutes',
-                             '0.4 mi · back to the mill'];
+  // Derived from currently selected trail; reassigned by syncTrailRuntime()
+  let SEGMENT_DISTANCES = TRAILS[selectedTrail].segmentDistances.slice();
+  let STOP_POS = computeStopPositions(stopData.length);
 
-  // % positions of the 5 stops along the spots line
-  const STOP_POS = [12, 32, 50, 70, 88];
+  // Keep the runtime arrays + progress-bar markers in sync with selectedTrail
+  function syncTrailRuntime() {
+    stopData = TRAILS[selectedTrail].stops;
+    SEGMENT_DISTANCES = TRAILS[selectedTrail].segmentDistances.slice();
+    STOP_POS = computeStopPositions(stopData.length);
+    renderProgressMarkers();
+  }
+
+  function renderProgressMarkers() {
+    const lineEl = document.querySelector('.spots .line');
+    if (!lineEl) return;
+    lineEl.querySelectorAll('.marker').forEach(m => m.remove());
+    const pin = document.getElementById('position-pin');
+    stopData.forEach((s, i) => {
+      const span = document.createElement('span');
+      span.className = 'marker';
+      span.dataset.stop = String(i);
+      span.style.left = STOP_POS[i] + '%';
+      lineEl.insertBefore(span, pin);
+    });
+  }
 
   function setMarkers(phase) {
     const markers = document.querySelectorAll('.spots .marker');
@@ -2496,6 +3217,8 @@
         if (i <= currentStopIdx) m.classList.add('passed');
         else if (i === next) m.classList.add('approaching');
         else m.classList.add('upcoming');
+      } else if (phase === 'complete') {
+        m.classList.add('passed');
       }
     });
   }
@@ -2510,7 +3233,11 @@
     const stop = stopData[idx];
     document.getElementById('sh-img').src = stop.img;
     document.getElementById('sh-name').textContent = stop.name;
-    document.querySelector('.sh-num').textContent = stop.num;
+    // Update full eyebrow so "of N" reflects the current trail's stop count
+    const eyebrow = document.querySelector('.sh-eyebrow');
+    if (eyebrow) {
+      eyebrow.innerHTML = `<span class="sh-arrived">Arrived</span> · <span>Stop <span class="sh-num">${stop.num}</span> of ${stopData.length}</span>`;
+    }
     // swap narration sentences for this stop
     trailSentences = stop.sentences.slice();
     lyricIdx = 0;
@@ -2528,7 +3255,7 @@
     setMarkers('at');
     setPin(STOP_POS[currentStopIdx], 0);
     const stop = stopData[currentStopIdx];
-    setLabel(`${stop.name} · Stop ${stop.num} of 5`);
+    setLabel(`${stop.name} · Stop ${stop.num} of ${stopData.length}`);
     if (!isPaused) startLyricLoop();
   }
 
@@ -2562,19 +3289,37 @@
     // pin keeps animating from the between transition
   }
 
+  function enterComplete() {
+    tourState = 'complete';
+    walkingEl.dataset.tourState = 'complete';
+    stopLyricLoop();
+    setMarkers('complete');
+    setLabel('Tour complete · Kildoo Trail');
+    // pin sits on the last stop
+    setPin(STOP_POS[stopData.length - 1], 600);
+  }
+
   function scheduleNext() {
     clearTimeout(stateTimer);
     if (isPaused) return;
+    if (tourState === 'complete') return;  // tour is done, no further transitions
     let delay;
     if (tourState === 'at-stop') delay = AT_STOP_MS;
     else if (tourState === 'between') delay = BETWEEN_MS;
     else delay = APPROACHING_MS;
     stateTimer = setTimeout(() => {
       if (isPaused) return;
-      if (tourState === 'at-stop') enterBetween();
-      else if (tourState === 'between') enterApproaching();
-      else {
-        currentStopIdx = (currentStopIdx + 1) % stopData.length;
+      if (tourState === 'at-stop') {
+        // After the last stop, end the tour with a completion screen
+        if (currentStopIdx === stopData.length - 1) {
+          enterComplete();
+          return;  // don't reschedule
+        }
+        enterBetween();
+      } else if (tourState === 'between') {
+        enterApproaching();
+      } else {  // approaching
+        currentStopIdx += 1;
         enterAtStop();
       }
       scheduleNext();
@@ -2582,39 +3327,188 @@
   }
 
   function startTourCycle() {
+    syncTrailRuntime();      // ensure stopData/STOP_POS/markers reflect selectedTrail
+    currentStopIdx = 0;      // start at first stop of the trail
     enterAtStop();
     scheduleNext();
+    // GPS check happens BEFORE this on Begin tap; nothing to request here.
   }
   function stopTourCycle() {
     clearTimeout(stateTimer);
     stateTimer = null;
+    stopGpsTracking();
   }
   function resetTourCycle() {
     stopTourCycle();
-    currentStopIdx = 2;
+    syncTrailRuntime();
+    currentStopIdx = 0;
     enterAtStop();
     scheduleNext();
   }
+
+  // ---------- Geolocation: gate Begin on location, fall back via iOS alert ----------
+  // When the user taps Begin, we briefly check GPS. If they're at the trail and
+  // gave permission, we proceed straight to the walking view (with live tracking).
+  // Otherwise we show an iOS-style alert: "you're not at this trail / location off"
+  // with Cancel / Start tour — the demo time-cycle runs either way.
+  const TRAIL_NEAR_THRESHOLD_M = 800;    // within ~0.5 mi of any stop => "at the trail"
+  let gpsWatchId = null;
+  let userPos = null;
+  let locCheckInFlight = false;
+
+  function metersBetween(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+    const toRad = d => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat/2)**2 +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  // Called when user taps Begin. Either navigates to walking (GPS ok + on trail),
+  // or pops the alert (denied / off-trail / error / slow geolocation).
+  // Hard-capped at ~3 s so the demo never feels stuck.
+  async function checkLocationThenBegin() {
+    if (locCheckInFlight) return;
+    if (!('geolocation' in navigator)) {
+      showLocationAlert('unsupported');
+      return;
+    }
+
+    // Fast-path via Permissions API: if previously denied, skip the slow call.
+    if ('permissions' in navigator) {
+      try {
+        const result = await navigator.permissions.query({ name: 'geolocation' });
+        if (result.state === 'denied') {
+          showLocationAlert('denied');
+          return;
+        }
+      } catch (_) { /* not all browsers support this — fall through */ }
+    }
+
+    locCheckInFlight = true;
+    let resolved = false;
+
+    // Safety net: if the browser never calls success or error, show the alert.
+    const fallback = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      locCheckInFlight = false;
+      showLocationAlert('not-at-trail');
+    }, 3000);
+
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(fallback);
+        locCheckInFlight = false;
+        userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        const stops = TRAILS[selectedTrail].stops;
+        let minDist = Infinity;
+        for (const s of stops) {
+          const d = metersBetween(userPos.lat, userPos.lng, s.lat, s.lng);
+          if (d < minDist) minDist = d;
+        }
+        if (minDist > TRAIL_NEAR_THRESHOLD_M) {
+          showLocationAlert('not-at-trail');
+        } else {
+          startGpsTracking();      // live tracking from here
+          go('walking');
+        }
+      },
+      err => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(fallback);
+        locCheckInFlight = false;
+        if (err && err.code === err.PERMISSION_DENIED) showLocationAlert('denied');
+        else showLocationAlert('error');
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }
+    );
+  }
+
+  function startGpsTracking() {
+    stopGpsTracking();
+    if (!('geolocation' in navigator)) return;
+    gpsWatchId = navigator.geolocation.watchPosition(
+      pos => { userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude }; },
+      _err => { /* keep last fix */ },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+    );
+  }
+  function stopGpsTracking() {
+    if (gpsWatchId !== null) {
+      navigator.geolocation.clearWatch(gpsWatchId);
+      gpsWatchId = null;
+    }
+  }
+
+  // ---------- iOS-style alert ----------
+  const locAlert       = document.getElementById('loc-alert');
+  const locAlertTitle  = document.getElementById('loc-alert-title');
+  const locAlertMsg    = document.getElementById('loc-alert-msg');
+  const locAlertCancel = document.getElementById('loc-alert-cancel');
+  const locAlertStart  = document.getElementById('loc-alert-start');
+
+  function showLocationAlert(reason) {
+    const msg = "Location usually guides the tour.<br>Here, it'll play in order.";
+    const copy = {
+      'denied':       { title: 'Location off',         msg },
+      'not-at-trail': { title: 'Not on the trail yet?', msg },
+      'error':        { title: 'Location unavailable', msg },
+      'unsupported':  { title: 'Location unavailable', msg },
+    }[reason] || { title: 'Location unavailable', msg };
+
+    locAlertTitle.textContent = copy.title;
+    locAlertMsg.innerHTML     = copy.msg;
+    locAlert.setAttribute('aria-hidden', 'false');
+    locAlert.classList.add('is-shown');
+  }
+  function hideLocationAlert() {
+    locAlert.classList.remove('is-shown');
+    locAlert.setAttribute('aria-hidden', 'true');
+  }
+
+  locAlertCancel.addEventListener('click', () => hideLocationAlert());
+  locAlertStart.addEventListener('click', () => {
+    hideLocationAlert();
+    go('walking');   // start the demo cycle without GPS
+  });
 
   // ---------- walking controls ----------
   const walkingEl = document.getElementById('walking');
   const askBtn    = document.getElementById('ask-btn');
   const camBtn    = document.getElementById('cam-btn');
   const moreBtn   = document.getElementById('more-btn');
-  const spotsBtn  = document.getElementById('spots-btn');
-  const tourMap   = document.getElementById('tour-map');
-  const tmClose   = document.getElementById('tm-close');
+  const spotsBtn       = document.getElementById('spots-btn');
+  const tourMapOverlay = document.getElementById('tour-map');
+  const tmClose        = document.getElementById('tm-close');
+  const tmNameEl       = document.getElementById('tm-name');
+  const tmLocEl        = document.getElementById('tm-loc');
 
-  // Tap progress bar OR stop hero → show full trail map
+  // Tap progress bar OR stop hero → show full trail map.
+  // Header + Leaflet map are rebuilt each time so they always match the
+  // currently selected trail and the active stop in the tour cycle.
   function openTourMap(e) {
-    e.stopPropagation();
-    tourMap.classList.add('is-shown');
+    if (e) e.stopPropagation();
+    const t = TRAILS[selectedTrail];
+    const idx = Math.min(Math.max(currentStopIdx, 0), t.stops.length - 1);
+    const stop = t.stops[idx];
+    if (tmNameEl) tmNameEl.textContent = t.name;
+    if (tmLocEl)  tmLocEl.textContent  = `Stop ${stop.num} of ${t.stops.length} · ${stop.name}`;
+    tourMapOverlay.classList.add('is-shown');
+    // Defer init until the overlay is laid out so Leaflet can measure it.
+    setTimeout(() => initTourMap(idx), 80);
   }
   spotsBtn.addEventListener('click', openTourMap);
   document.getElementById('stop-hero').addEventListener('click', openTourMap);
   tmClose.addEventListener('click', e => {
     e.stopPropagation();
-    tourMap.classList.remove('is-shown');
+    tourMapOverlay.classList.remove('is-shown');
   });
   const moreSheet = document.getElementById('more-sheet');
   const pauseItem = document.getElementById('pause-item');
@@ -2776,6 +3670,10 @@
     window._tt = setTimeout(() => toastEl.classList.remove('is-shown'), 1400);
   }
 
+  // Open journal from the tour-complete screen
+  const tcJournalBtn = document.getElementById('tc-journal');
+  if (tcJournalBtn) tcJournalBtn.addEventListener('click', () => go('journal'));
+
   // End the tour
   endItem.addEventListener('click', e => {
     e.stopPropagation();
@@ -2802,18 +3700,11 @@
   });
 
   // ---------- reset ----------
-  document.getElementById('reset').addEventListener('click', () => {
-    lyricIdx = 0;
-    currentStopIdx = 2;
-    tourState = 'at-stop';
-    isPaused = false;
-    walkingEl.classList.remove('is-paused');
-    pauseItem.classList.remove('is-paused');
-    kildooDownloaded = false;
-    // restore download button on kildoo
-    const wrap = document.getElementById('kildoo-status');
+  function resetDownloadCard(wrapId, btnId, sizeText) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
     wrap.innerHTML = `
-      <button class="dl-btn" id="dl-kildoo" data-state="idle">
+      <button class="dl-btn" id="${btnId}" data-state="idle">
         <span class="dl-fill"></span>
         <span class="dl-icon">
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
@@ -2821,15 +3712,24 @@
             <path d="M1.5 9H8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
           </svg>
         </span>
-        <span class="dl-text">Download · 68 MB</span>
+        <span class="dl-text">Download · ${sizeText}</span>
       </button>`;
-    // reattach handler
-    document.getElementById('dl-kildoo').addEventListener('click', e => {
-      e.stopPropagation();
-      const btn = e.currentTarget;
-      if (btn.dataset.state !== 'idle') return;
-      runDownload(btn);
-    });
+    attachDownload(btnId);
+  }
+
+  document.getElementById('reset').addEventListener('click', () => {
+    lyricIdx = 0;
+    currentStopIdx = 0;
+    tourState = 'at-stop';
+    isPaused = false;
+    walkingEl.classList.remove('is-paused');
+    pauseItem.classList.remove('is-paused');
+    selectedTrail = 'kildoo';
+    syncTrailRuntime();
+    applyTrailToDetail();
+    detailLoadedTrail = null;  // force map rebuild on next detail open
+    resetDownloadCard('kildoo-status', 'dl-kildoo', '68 MB');
+    resetDownloadCard('tranquil-status', 'dl-tranquil', '42 MB');
     go('picker');
   });
 
