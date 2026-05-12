@@ -27,3 +27,14 @@ scripts/backups/
 
 # Output WAVs
 *.wav
+
+# RAG pipeline dev artifacts. The .embeddings.f16 files are
+# reproducible from chunks + scripts/embed-rag-corpus.py and live
+# canonically in HikeCompanion/Resources/RAG/ for the iOS bundle.
+rag-poc/*.embeddings.f16
+
+# Local Python venv for the RAG embedding pipeline. Recreate via:
+#   python3 -m venv .venv-rag
+#   source .venv-rag/bin/activate
+#   pip install -r scripts/rag-requirements.txt
+.venv-rag/

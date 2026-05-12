@@ -61,12 +61,20 @@ targets:
       - path: HikeCompanion
         excludes:
           - "Resources/Models/**"
+          - "Resources/RAG/**"
       # Models dir as a "blue folder" reference — preserves directory tree
       # in the .app bundle so Kokoro and Gemma files end up in separate
       # subdirectories. Critical because mlx-swift-lm globs `*.safetensors`
       # from the model directory; without the split, it would pick up
       # Kokoro's weights and crash with "Unhandled keys [bert, decoder, …]".
       - path: HikeCompanion/Resources/Models
+        type: folder
+      # RAG corpus + precomputed embeddings as a blue-folder reference so
+      # the directory survives intact in the .app bundle (RAGService.swift
+      # looks up files via Bundle.main.url(... subdirectory: "RAG")). The
+      # full corpus is tiny (~150 KB across 4 subjects × {jsonl, embeddings.f16}
+      # at PoC scale), bundle-friendly without any download flow.
+      - path: HikeCompanion/Resources/RAG
         type: folder
     dependencies:
       # KokoroSwift is built as a dynamic .framework — must be embedded in

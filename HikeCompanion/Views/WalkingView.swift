@@ -123,6 +123,9 @@ struct WalkingView: View {
             // Drop the LM's trail/stop framing so a re-entry to picker
             // doesn't carry stale context into the next trail.
             gemma.setActiveContext(trail: nil, stopIdx: nil)
+            // Drop the RAG active subject so the next trail starts
+            // fresh (no leaked retrieval from a previous tour).
+            try? rag.setActiveSubject(nil)
         }
         // When Kokoro stops speaking, decide whether the tour narration
         // ended naturally (good — clear state and resume the phase timer)
@@ -1235,6 +1238,19 @@ struct WalkingView: View {
         // can ask anything. Without this, the very first Ask would hit
         // a Gemma that doesn't know which trail it's on.
         gemma.setActiveContext(trail: trail, stopIdx: stopIdx)
+
+        // PoC: hardcode the RAG subject to .geology so retrieval runs
+        // end-to-end without a UI. The first runAsk on this tour will
+        // trigger swift-embeddings' MiniLM download from HuggingFace
+        // (~80 MB, one-time per device, needs network on first launch).
+        // TODO: replace with a subject-picker UI; consider auto-pick
+        // per trail (Kildoo/HellsHollow → geology+plants, Tranquil →
+        // plants by default) once the picker is built.
+        do {
+            try rag.setActiveSubject(.geology)
+        } catch {
+            print("[RAG] setActiveSubject failed: \(error.localizedDescription)")
+        }
         // Speak the trail intro on Begin. Phase timer is paused while
         // narration plays — see scheduleNextPhase.
         speakNarration(
