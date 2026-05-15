@@ -104,6 +104,17 @@ struct Trail: Identifiable {
     let difficulty: String
     let stopCount: Int
     let bytes: Int                  // bundle size for download flow (mockup-only)
+    /// Display-formatted download size shown on the detail-view CTA's
+    /// "Download · 68 MB" label (mockup state-aware button — see
+    /// design/README.md item 17). String so the formatting is locked
+    /// once at authoring time rather than re-derived from `bytes`.
+    let downloadSize: String
+    /// Whether this trail's offline pack starts marked as downloaded
+    /// on a fresh app launch. Seeds `AppRouter.downloadedTrailIDs`.
+    /// Old Field is `true` (matches the "Completed Apr 14" badge —
+    /// the demo state for a previously-walked trail); Kildoo and
+    /// Tranquil are `false` so the download CTA flow is exercisable.
+    let initiallyDownloaded: Bool
     let coverImageURL: URL?
     let stops: [TrailStop]
 
@@ -188,6 +199,8 @@ enum TrailData {
         difficulty: "Moderate",
         stopCount: 5,
         bytes: 68 * 1_024 * 1_024,
+        downloadSize: "68 MB",
+        initiallyDownloaded: false,
         coverImageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/c/cc/Woodlands_around_McConnell%27s_Mill_State_Park.jpg"),
         stops: [
             TrailStop(
@@ -377,6 +390,8 @@ enum TrailData {
         difficulty: "Easy",
         stopCount: 5,
         bytes: 41 * 1_024 * 1_024,
+        downloadSize: "54 MB",
+        initiallyDownloaded: true,   // matches "Completed Apr 14" picker badge
         coverImageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/b/b6/Jennings_Environmental_Education_Center.jpg"),
         stops: [
             TrailStop(
@@ -595,6 +610,8 @@ enum TrailData {
         difficulty: "Easy",
         stopCount: 3,
         bytes: 52 * 1_024 * 1_024,
+        downloadSize: "42 MB",
+        initiallyDownloaded: false,
         coverImageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/6/60/Pittsburgh_frick_park_trail.jpg"),
         stops: [
             TrailStop(

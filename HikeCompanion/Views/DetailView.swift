@@ -17,6 +17,18 @@ struct DetailView: View {
     /// timer). See design/README.md item 15.
     @State private var showBeginAlert: Bool = false
 
+    /// The three CTA states from the mockup (design/README.md item 17):
+    /// `download` shows "Download · 68 MB" + arrow icon; `downloading`
+    /// shows a dark progress fill + percentage and no-ops on tap;
+    /// `ready` is the familiar "Begin" + play icon that opens the
+    /// demo-mode alert. Per-trail state is sourced from the router's
+    /// `downloadedTrailIDs` set on appear and after a faux-download
+    /// completes.
+    private enum CTAState: Equatable { case download, downloading, ready }
+    @State private var ctaState: CTAState = .ready
+    @State private var ctaPercent: Double = 0
+    @State private var downloadTask: Task<Void, Never>? = nil
+
     var body: some View {
         ZStack {
             AppColor.mapBg.ignoresSafeArea()
@@ -93,18 +105,7 @@ struct DetailView: View {
                     }
                     .font(AppFont.sans(13.5, .medium))
 
-                    Button {
-                        showBeginAlert = true
-                    } label: {
-                        Text("Begin")
-                            .font(AppFont.sans(17, .semibold))
-                            .foregroundStyle(AppColor.limeText)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18)
-                            .background(AppColor.lime)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(LimePressStyle())
+                    ctaButton
                 }
                 .padding(.horizontal, 22)
                 .padding(.top, 18)
@@ -141,6 +142,119 @@ struct DetailView: View {
             Text("On the trail, stops play when you arrive.\nThis demo will auto-advance.")
         }
         .tint(AppColor.lime)
+        .onAppear { syncCTAState() }
+        .onChange(of: trail.id) { _, _ in syncCTAState() }
+        .onDisappear {
+            downloadTask?.cancel()
+            downloadTask = nil
+        }
+    }
+
+    // MARK: - State-aware CTA (mockup: design/mockups.html .cta-btn)
+
+    /// The lime CTA capsule. Three visual states share one button so the
+    /// position never jumps: dark progress fill grows L→R during download,
+    /// then snaps to "Begin" + play icon. See design/README.md item 17.
+    private var ctaButton: some View {
+        Button {
+            tapCTA()
+        } label: {
+            HStack(spacing: 10) {
+                ctaIcon
+                Text(ctaLabel)
+                    .font(AppFont.sans(17, .semibold))
+                    .foregroundStyle(AppColor.limeText)
+                    .monospacedDigit()
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+            .background(
+                ZStack(alignment: .leading) {
+                    AppColor.lime
+                    GeometryReader { geo in
+                        Rectangle()
+                            .fill(.black.opacity(0.20))
+                            .frame(width: geo.size.width * CGFloat(ctaPercent / 100.0))
+                    }
+                    .allowsHitTesting(false)
+                }
+            )
+            .clipShape(Capsule())
+        }
+        .buttonStyle(LimePressStyle())
+        .disabled(ctaState == .downloading)
+        .animation(.easeInOut(duration: 0.2), value: ctaState)
+    }
+
+    @ViewBuilder
+    private var ctaIcon: some View {
+        switch ctaState {
+        case .download:
+            Image(systemName: "arrow.down.to.line")
+                .font(.system(size: 15, weight: .heavy))
+                .foregroundStyle(AppColor.limeText)
+        case .ready:
+            Image(systemName: "play.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(AppColor.limeText)
+        case .downloading:
+            EmptyView()
+        }
+    }
+
+    private var ctaLabel: String {
+        switch ctaState {
+        case .download:    return "Download · \(trail.downloadSize)"
+        case .downloading: return "\(Int(ctaPercent.rounded()))%"
+        case .ready:       return "Begin"
+        }
+    }
+
+    private func tapCTA() {
+        switch ctaState {
+        case .download:    startDownload()
+        case .downloading: break // no-op while in flight
+        case .ready:       showBeginAlert = true
+        }
+    }
+
+    /// Mockup CTA: 110ms ticks, +6..+13% per tick, 260ms settle at 100%
+    /// before flipping to .ready. The faux progress is decorative — the
+    /// models are bundled at install — but the affordance teaches the
+    /// "offline pack" mental model the production app would use.
+    private func startDownload() {
+        downloadTask?.cancel()
+        ctaPercent = 0
+        withAnimation(.easeInOut(duration: 0.2)) {
+            ctaState = .downloading
+        }
+        downloadTask = Task { @MainActor in
+            while ctaPercent < 100 && !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(110))
+                if Task.isCancelled { return }
+                let next = min(100, ctaPercent + 6 + Double.random(in: 0...7))
+                withAnimation(.linear(duration: 0.12)) {
+                    ctaPercent = next
+                }
+            }
+            try? await Task.sleep(for: .milliseconds(260))
+            if Task.isCancelled { return }
+            router.markDownloaded(trail)
+            withAnimation(.easeInOut(duration: 0.25)) {
+                ctaState = .ready
+                ctaPercent = 0
+            }
+        }
+    }
+
+    /// Reset CTA to match the trail's current download status. Called on
+    /// appear and whenever the user picks a different trail (router
+    /// re-uses the same DetailView instance for all three trails).
+    private func syncCTAState() {
+        downloadTask?.cancel()
+        downloadTask = nil
+        ctaPercent = 0
+        ctaState = router.isDownloaded(trail) ? .ready : .download
     }
 
     private var formattedMiles: String {

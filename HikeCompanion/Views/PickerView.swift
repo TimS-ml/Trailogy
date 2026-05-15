@@ -223,26 +223,16 @@ private struct TrailCard: View {
             .foregroundStyle(AppColor.ink100.opacity(0.55))
     }
 
+    /// Picker cards are pure choice — photo, region, name, stats — with
+    /// the one exception of a completed-walk date badge that links back
+    /// to the journal. The `Ready` and `Download · MB` pills from
+    /// earlier iterations have been retired: the download decision now
+    /// lives on the detail view's state-aware CTA (design/README.md
+    /// item 17), and "ready" is the default for every trail so its
+    /// badge added noise without information.
     @ViewBuilder
     private var statusBadge: some View {
         switch status {
-        case .ready:
-            Label {
-                Text("Ready")
-                    .font(AppFont.sans(10.5, .semibold))
-                    .tracking(0.6)
-                    .textCase(.uppercase)
-            } icon: {
-                Circle()
-                    .fill(AppColor.lime)
-                    .frame(width: 6, height: 6)
-                    .shadow(color: AppColor.lime.opacity(0.6), radius: 4)
-            }
-            .foregroundStyle(AppColor.ink100)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.black.opacity(0.5), in: Capsule())
-
         case .walked(let date):
             Text(date)
                 .font(AppFont.sans(10.5, .semibold))
@@ -253,31 +243,9 @@ private struct TrailCard: View {
                 .padding(.vertical, 6)
                 .background(.black.opacity(0.4), in: Capsule())
 
-        case .downloadable:
-            // Models are bundled — kept here as a placeholder if we ever
-            // add real per-trail downloads.
-            Label {
-                Text("Download · \(byteLabel)")
-                    .font(AppFont.sans(10.5, .heavy))
-                    .tracking(0.6)
-                    .textCase(.uppercase)
-            } icon: {
-                Image(systemName: "arrow.down.to.line")
-                    .font(.system(size: 9, weight: .bold))
-            }
-            .foregroundStyle(AppColor.lime)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
-            .background(.black.opacity(0.55), in: Capsule())
-            .overlay(
-                Capsule().stroke(AppColor.lime.opacity(0.55), lineWidth: 1)
-            )
+        case .ready, .downloadable:
+            EmptyView()
         }
-    }
-
-    private var byteLabel: String {
-        let mb = trail.bytes / (1024 * 1024)
-        return "\(mb) MB"
     }
 }
 
