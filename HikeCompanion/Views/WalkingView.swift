@@ -34,7 +34,13 @@ struct WalkingView: View {
 
     // MARK: - Tour cycle state
 
-    enum TourPhase { case atStop, between, approaching }
+    /// Tour state machine. Mirrors `design/mockups.html` — see
+    /// `design/README.md` "Tour state machine" section.
+    ///   atStop → between → approaching → atStop (next)  … repeat …
+    ///   atStop (last stop) → **complete**  (terminal)
+    /// The `complete` state replaces the previous wrap-back-to-stop-1
+    /// loop and shows the tour summary + "Open journal" CTA.
+    enum TourPhase { case atStop, between, approaching, complete }
 
     @State private var phase: TourPhase = .atStop
     @State private var stopIdx: Int = 0
@@ -220,10 +226,16 @@ struct WalkingView: View {
             }
 
             // ---- Bottom controls ----
-            VStack {
-                Spacer()
-                bottomControls
-                    .padding(.bottom, 60)
+            // Hidden in the terminal `.complete` state — the
+            // completion card's "Open journal" CTA is the only
+            // action; mic / camera / more aren't relevant after the
+            // tour ends.
+            if phase != .complete {
+                VStack {
+                    Spacer()
+                    bottomControls
+                        .padding(.bottom, 60)
+                }
             }
 
             // ---- Paused banner ----
@@ -266,16 +278,22 @@ struct WalkingView: View {
 
     private var topProgressArea: some View {
         ZStack {
-            if phase == .atStop {
+            switch phase {
+            case .atStop:
                 stopHeroCard
                     .padding(.horizontal, 24)
                     .padding(.top, 70)
                     .transition(.opacity.combined(with: .scale(scale: 0.985)))
-            } else {
+            case .between, .approaching:
                 progressBar
                     .padding(.horizontal, 24)
                     .padding(.top, 70)
                     .transition(.opacity)
+            case .complete:
+                // Hidden in terminal state — the completion card takes
+                // over the screen centrally; nothing competes for the
+                // top progress slot.
+                EmptyView()
             }
         }
     }
@@ -413,7 +431,7 @@ struct WalkingView: View {
         let curPos  = trail.stopProgressPositions[safe: stopIdx] ?? 0.5
         let nextPos = trail.stopProgressPositions[safe: nextIdx] ?? curPos
         switch phase {
-        case .atStop:       return curPos
+        case .atStop, .complete:    return curPos
         case .between, .approaching: return nextPos
         }
     }
@@ -428,6 +446,8 @@ struct WalkingView: View {
             return "Walking · \(dist) to \(nextName)"
         case .approaching:
             return "Approaching · \(nextStop.name)"
+        case .complete:
+            return "Tour complete"
         }
     }
 
@@ -461,7 +481,12 @@ struct WalkingView: View {
     /// the next narration will fill the lyric area when it arrives.
     @ViewBuilder
     private var centerContent: some View {
-        if showAnswerLane {
+        if phase == .complete {
+            // Terminal state — takes priority over every other lane.
+            // No Asks, no narration, no quiet indicator — just the
+            // summary card and the journal CTA.
+            completionCard
+        } else if showAnswerLane {
             // FOREGROUND — Companion reply (Q&A)
             answerLaneView
                 .opacity(isHolding ? 0.05 : 1.0)
@@ -661,6 +686,80 @@ struct WalkingView: View {
             }
         }
         .padding(.horizontal, 32)
+    }
+
+    // MARK: - Completion card (terminal state)
+
+    /// Shown when `phase == .complete`. Mirrors the mockup's terminal
+    /// state: lime-bordered checkmark + "TOUR COMPLETE" eyebrow +
+    /// "You walked the loop" + summary stats derived from the active
+    /// trail's metadata (no more hardcoded "2.0 mi · 5 stops · 1 hr
+    /// 12 min" — the previous mockup's known limitation) + a lime
+    /// "Open journal" CTA that routes to the journal screen.
+    private var completionCard: some View {
+        VStack(spacing: 22) {
+            // Lime-bordered checkmark glyph
+            ZStack {
+                Circle()
+                    .stroke(AppColor.lime, lineWidth: 1.5)
+                    .frame(width: 86, height: 86)
+                    .shadow(color: AppColor.lime.opacity(0.35), radius: 18)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 32, weight: .semibold))
+                    .foregroundStyle(AppColor.lime)
+            }
+
+            VStack(spacing: 8) {
+                Text("Tour complete")
+                    .eyebrowStyle(AppColor.lime)
+
+                Text("You walked the loop")
+                    .font(AppFont.sans(24, .bold))
+                    .tracking(-0.4)
+                    .foregroundStyle(AppColor.ink100)
+                    .multilineTextAlignment(.center)
+
+                Text(completionSummary)
+                    .font(AppFont.sans(13, .medium))
+                    .foregroundStyle(AppColor.ink60)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 4)
+            }
+
+            Button {
+                router.endTour()  // routes to .journal; onDisappear cleans up
+            } label: {
+                Text("Open journal")
+                    .font(AppFont.sans(15, .semibold))
+                    .foregroundStyle(AppColor.limeText)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 14)
+                    .background(AppColor.lime, in: Capsule())
+            }
+            .buttonStyle(LimePressStyle())
+            .padding(.top, 8)
+        }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Stats line derived from the active trail's metadata —
+    /// e.g. "2 mi · 5 stops · 1 hr" or "1.1 mi · 3 stops · 30 min".
+    private var completionSummary: String {
+        let miles = trail.distanceMiles == floor(trail.distanceMiles)
+            ? String(format: "%.0f", trail.distanceMiles)
+            : String(format: "%.1f", trail.distanceMiles)
+        return "\(miles) mi · \(trail.stops.count) stops · \(formattedDuration)"
+    }
+
+    /// "30 min" / "1 hr" / "1 hr 12 min" — friendlier than always
+    /// rendering minutes when the duration crosses an hour.
+    private var formattedDuration: String {
+        let m = trail.durationMinutes
+        if m < 60 { return "\(m) min" }
+        let h = m / 60
+        let r = m % 60
+        return r == 0 ? "\(h) hr" : "\(h) hr \(r) min"
     }
 
     // MARK: - Photo context bar
@@ -1276,10 +1375,12 @@ struct WalkingView: View {
 
     /// Schedule the next phase advance. Pauses if narration or a Q&A
     /// answer is in flight — we don't want to ramp through stops while
-    /// the user is hearing/being answered something.
+    /// the user is hearing/being answered something. Also early-returns
+    /// if the tour is `complete` (terminal state, no further timer).
     private func scheduleNextPhase() {
         phaseTimer?.invalidate()
         if isPaused { return }
+        if phase == .complete { return } // terminal — don't re-arm
         if narrationActive { return }   // wait for narration to finish
         if isAnswering { return }        // wait for answer to play out
 
@@ -1288,6 +1389,7 @@ struct WalkingView: View {
             case .atStop:       return atStopSeconds
             case .between:      return betweenSeconds
             case .approaching:  return approachingSeconds
+            case .complete:     return .infinity   // unreachable — guarded above
             }
         }()
         phaseTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
@@ -1307,10 +1409,26 @@ struct WalkingView: View {
         if isHolding || isAnswering { return }
         switch phase {
         case .atStop:
-            phase = .between
+            // If the user just finished the FINAL stop's atStop window,
+            // the tour is over — transition to the terminal `complete`
+            // state instead of continuing the between → approaching →
+            // next-stop cycle.
+            if stopIdx >= trail.stops.count - 1 {
+                phase = .complete
+                // Tour over — clear any lingering narration state so
+                // scheduleNextPhase doesn't try to restart the cycle.
+                narrationFullText = nil
+                narrationDelivered = ""
+                narrationPaused = false
+            } else {
+                phase = .between
+            }
         case .between:
             phase = .approaching
         case .approaching:
+            // No more wrap-around: atStop → complete handles the
+            // last-stop case above. The modulo is kept as a defensive
+            // guard against off-by-one bugs (it's a no-op now).
             stopIdx = (stopIdx + 1) % trail.stops.count
             phase = .atStop
             // Refresh the LM's stop framing so any Ask the user makes
@@ -1322,6 +1440,9 @@ struct WalkingView: View {
                 currentStop.spokenNarration,
                 preamble: "Arriving at \(currentStop.name)…"
             )
+        case .complete:
+            // Terminal state — nothing to advance to.
+            return
         }
         scheduleNextPhase()
     }
