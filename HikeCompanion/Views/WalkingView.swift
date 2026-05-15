@@ -22,6 +22,7 @@
 // interaction during Phase 2 testing.
 
 import SwiftUI
+import UIKit  // UIImpactFeedbackGenerator / UINotificationFeedbackGenerator
 
 struct WalkingView: View {
     @EnvironmentObject var router: AppRouter
@@ -1431,6 +1432,7 @@ struct WalkingView: View {
         // in-flight Ask, dropping this transition is correct —
         // scheduleNextPhase will restart it once the user is done.
         if isHolding || isAnswering { return }
+        let priorPhase = phase
         switch phase {
         case .atStop:
             // If the user just finished the FINAL stop's atStop window,
@@ -1473,7 +1475,36 @@ struct WalkingView: View {
             // Terminal state — nothing to advance to.
             return
         }
+        // Tactile feedback on phase transition. Mirrors the mockup's
+        // `navigator.vibrate` call (see design/README.md item 12:
+        // "Audio chimes explored and removed → haptic only"). One soft
+        // beat per transition; on tour completion we use a success
+        // notification pattern instead to signal the terminal state.
+        if phase != priorPhase {
+            fireTransitionHaptic(for: phase)
+        }
         scheduleNextPhase()
+    }
+
+    /// Per-phase haptic intensity — emphasis grows with the
+    /// significance of the transition. Soft for the "departure"
+    /// (atStop → between), light for the "anticipation"
+    /// (between → approaching), medium for the "arrival"
+    /// (approaching → atStop). Tour completion uses the notification
+    /// generator's `.success` pattern (different physical sensation
+    /// than the impact generator) so it doesn't feel like just
+    /// another transition.
+    private func fireTransitionHaptic(for newPhase: TourPhase) {
+        switch newPhase {
+        case .between:
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        case .approaching:
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        case .atStop:
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        case .complete:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
     }
 
     /// True while we have an active narration or one paused mid-flight.

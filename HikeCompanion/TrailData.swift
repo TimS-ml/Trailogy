@@ -173,11 +173,29 @@ enum TrailData {
                     "Some of them are three centuries old."
                 ],
                 journalFact: "The eastern hemlocks above the gorge are roughly three centuries old — older than the country.",
-                lookFor: "Watch the creek beside the trail — it narrows and quickens as the gorge tightens before the bridge.",
+                lookFor: "Watch the hemlocks for buck rubs — bark scraped smooth at chest height.",
                 payoff: "You probably heard the falls a quarter-mile back — water travels far in a gorge."
             ),
+            // Stops 4 and 5 swapped to match design/mockups.html order
+            // (Slippery Rock at 4, Eckert Bridge at 5). The mockup's
+            // lookFor / payoff arc is tuned for this order: stop 3 →
+            // 4 is about buck rubs on hemlocks; stop 4 → 5 is about
+            // polypody fern rooted in bare stone.
             TrailStop(
                 number: 4,
+                name: "Slippery Rock",
+                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/2/26/McConnells_Mill_State_Park_Scenery_01.jpg"),
+                sentences: [
+                    "An eighty-ton sandstone boulder in the creek.",
+                    "It gave the waterway its name.",
+                    "Algae makes it slick — hence slippery."
+                ],
+                journalFact: "The 80-ton sandstone boulder in the creek that gave the waterway its name.",
+                lookFor: "Find a fern rooted in bare stone, no soil.",
+                payoff: "Those bark scrapes are bucks marking territory in fall."
+            ),
+            TrailStop(
+                number: 5,
                 name: "Eckert Bridge",
                 imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/3/34/McConnells_Mill_Bridge_and_Creek.jpg"),
                 sentences: [
@@ -186,27 +204,17 @@ enum TrailData {
                     "The creek narrows and quickens through the gorge."
                 ],
                 journalFact: "South crossing back to the western bank. The creek narrows here — a good spot to pause.",
-                lookFor: "Look for one large boulder in the streambed — bigger than the rest, sometimes slick with green algae.",
-                payoff: "If you noticed the creek tightening, you were watching it carve a narrower channel here — same water, faster motion."
-            ),
-            TrailStop(
-                number: 5,
-                name: "The Slippery Rock",
-                imageURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/2/26/McConnells_Mill_State_Park_Scenery_01.jpg"),
-                sentences: [
-                    "An eighty-ton sandstone boulder in the creek.",
-                    "It gave the waterway its name.",
-                    "Algae makes it slick — hence slippery."
-                ],
-                journalFact: "The 80-ton sandstone boulder in the creek that gave the waterway its name.",
-                payoff: "That algae-coated boulder is the Slippery Rock itself — eighty tons of sandstone that gave the creek its name."
+                payoff: "That's polypody fern — it roots in moss on bare rock and curls up to survive drought."
             )
         ],
+        // Segment distances mirror the mockup's TRAILS.kildoo.segmentDistances
+        // verbatim. Each entry covers the walk FROM stops[i] to stops[i+1]
+        // (and segment[count-1] is the closing leg back to the mill).
         segmentLabels: [
+            "0.5 mi · about 13 minutes",
             "0.4 mi · about 12 minutes",
-            "0.4 mi · about 11 minutes",
-            "0.3 mi · about 9 minutes",
             "0.5 mi · about 14 minutes",
+            "0.4 mi · about 11 minutes",
             "0.4 mi · back to the mill"
         ],
         stopProgressPositions: [0.12, 0.32, 0.50, 0.70, 0.88],
