@@ -21,6 +21,21 @@ private func c(_ lat: Double, _ lng: Double) -> CLLocationCoordinate2D {
     CLLocationCoordinate2D(latitude: lat, longitude: lng)
 }
 
+/// A single recap "Discovery" card — the post-tour learning anchored
+/// by a hero number / date / quantity that makes the fact memorable.
+/// Mirrors design/mockups.html `.learning-card` (anchor + body).
+/// Curator-authored, static per trail — selective, not exhaustive
+/// (not every stop produces a learning, and one stop can produce
+/// more than one).
+struct Learning: Identifiable {
+    let id = UUID()
+    /// Short heading — the hero number/date/quantity. Examples:
+    /// "320 million years", "Iron oxide", "1874", "80 tons".
+    let anchor: String
+    /// One-paragraph context that unpacks the anchor.
+    let body: String
+}
+
 struct TrailStop: Identifiable {
     let id = UUID()
     let number: Int
@@ -124,6 +139,11 @@ struct Trail: Identifiable {
     /// coordinates are visual estimates matching the mockup's
     /// hand-placed trail (see design/README.md "Known limitations").
     let path: [CLLocationCoordinate2D]
+    /// Post-tour "Discoveries" — the recap stream shown on the
+    /// journal screen. Curator-authored per trail, ~5 cards each,
+    /// each anchored by a hero number/date/quantity. See the
+    /// design/mockups.html `.discoveries` block.
+    let learnings: [Learning]
 }
 
 extension TrailStop {
@@ -313,6 +333,29 @@ enum TrailData {
             c(40.9411411, -80.1760534), c(40.9406894, -80.1759797), c(40.9405775, -80.1760499),
             c(40.9405369, -80.1760522), c(40.9404755, -80.1760524), c(40.9404088, -80.1760730),
             c(40.9403631, -80.1760979)
+        ],
+        // Recap "Discoveries" — verbatim from design/mockups.html.
+        learnings: [
+            Learning(
+                anchor: "320 million years",
+                body: "Age of the sandstone in the layered cliffs. The orange streaks are iron oxide leached out of the rock by groundwater over geologic time."
+            ),
+            Learning(
+                anchor: "Iron oxide",
+                body: "What turns the cliff face orange — leached out of the sandstone by groundwater, stain by stain, over a very long time."
+            ),
+            Learning(
+                anchor: "Three centuries",
+                body: "Age of the eastern hemlocks leaning over the gorge above Kildoo Falls — older than the country itself."
+            ),
+            Learning(
+                anchor: "1874",
+                body: "The Covered Bridge was built this year — Howe truss design, one of two left in Pennsylvania. The mill ground grain here until 1928."
+            ),
+            Learning(
+                anchor: "80 tons",
+                body: "Weight of Slippery Rock — the sandstone boulder in the creek that gave the waterway its name. Algae keeps it slick."
+            )
         ]
     )
 
@@ -507,6 +550,31 @@ enum TrailData {
             c(40.5060357, -80.3635418), c(40.5063049, -80.3633031), c(40.5064109, -80.3632790),
             c(40.5064803, -80.3633434), c(40.5065639, -80.3634506), c(40.5066125, -80.3634819),
             c(40.5068290, -80.3636062), c(40.5070437, -80.3638191), c(40.5085885, -80.3645201)
+        ],
+        // Recap "Discoveries" — authored for Old Field & Jennings.
+        // Anchors lean toward the wildflower/reclaimed-farm themes
+        // that distinguish this trail from the McConnells Mill gorge.
+        learnings: [
+            Learning(
+                anchor: "Seven years",
+                body: "How long large-flowered trillium takes to bloom from seed. The white-petaled carpet under the wildflower meadow is the result of decades of slow accumulation."
+            ),
+            Learning(
+                anchor: "1800s farms",
+                body: "The weathered fence posts in the understory mark the edges of farms that were here before the forest. The land reclaimed itself within a single human lifetime."
+            ),
+            Learning(
+                anchor: "Spring ephemerals",
+                body: "Trillium, Virginia bluebells, and Dutchman's breeches all bloom and seed in the brief window before the canopy closes. Most of the year they're invisible."
+            ),
+            Learning(
+                anchor: "Pileated woodpecker",
+                body: "The largest woodpecker in the eastern forest. The clean rectangular holes in dead snags here are its work — chiseled out chasing carpenter ants."
+            ),
+            Learning(
+                anchor: "Raccoon Creek",
+                body: "The slope at the east overlook drops toward this creek — the watershed that defines the park, and a tributary of the Ohio River."
+            )
         ]
     )
 
@@ -613,6 +681,30 @@ enum TrailData {
             c(40.4366230, -79.8989346), c(40.4347568, -79.8991703), c(40.4338944, -79.8994021),
             c(40.4330023, -79.9000810), c(40.4322765, -79.9004010), c(40.4313517, -79.9006325),
             c(40.4302675, -79.9007073), c(40.4296463, -79.9008283)
+        ],
+        // Recap "Discoveries" — authored for Tranquil. Themes lean
+        // toward Pittsburgh history + the geology of Fern Hollow.
+        learnings: [
+            Learning(
+                anchor: "644 acres",
+                body: "Frick Park is Pittsburgh's largest historic park — built up from Helen Clay Frick's 1919 bequest and continuously expanded since."
+            ),
+            Learning(
+                anchor: "150+ years",
+                body: "Some of the oaks and tulip poplars in Forest Grove pre-date the city's industrial era. They survived because this slope was too steep to log."
+            ),
+            Learning(
+                anchor: "Skunk cabbage",
+                body: "One of the first plants to bloom each spring — can melt its own snow with metabolic heat, sometimes visible against the late frost."
+            ),
+            Learning(
+                anchor: "Fern Hollow Creek",
+                body: "Drains into Nine Mile Run downstream. The whole watershed sat under industrial slag for most of the 20th century before the 2002 restoration."
+            ),
+            Learning(
+                anchor: "Pittsburgh Coal",
+                body: "The coal-bearing strata beneath the park formed about 300 million years ago, when this region was a coastal swamp near the equator."
+            )
         ]
     )
 

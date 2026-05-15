@@ -1,17 +1,41 @@
 // JournalView.swift
-// Post-tour summary screen.
-// Mockup: design/mockups.html → .journal view.
+// Post-tour Recap — what you learned, not what you did.
 //
-// All content is sample data from TrailData. Real implementation would
-// log: actual stops walked, captured photos, asked questions, observed
-// species (via on-device CV), and queue a citizen-science upload.
+// Mockup: design/mockups.html → `.journal` view (current iteration).
+// Per design/README.md item 16: the journal was reframed from a trip
+// report (route map + per-stop photo cards + sightings list +
+// share-when-connected button) into a knowledge digest. Each card is
+// "a museum catalog entry" anchored by a hero number/date/quantity.
+//
+// Layout:
+//   ┌──────────────────────────────────────────────────────┐
+//   │ ⊙ Kildoo Trail                                  [X] │
+//   │   May 3 · 2.0 mi · 1 hr · 5 stops                    │
+//   ├──────────────────────────────────────────────────────┤
+//   │                                                      │
+//   │                       5                              │
+//   │                Discoveries today                     │
+//   │                                                      │
+//   ├──────────────────────────────────────────────────────┤
+//   │ ┌──────────────────────────────────────────────  01 ┐│
+//   │ │ 320 million years                                  ││
+//   │ │ Age of the sandstone in the layered cliffs. The    ││
+//   │ │ orange streaks are iron oxide leached out of the   ││
+//   │ │ rock by groundwater over geologic time.            ││
+//   │ └────────────────────────────────────────────────────┘│
+//   │ ┌──────────────────────────────────────────────  02 ┐│
+//   │ │ Iron oxide ...                                     ││
+//   │ └────────────────────────────────────────────────────┘│
+//   │ (etc through 05)                                     │
+//   └──────────────────────────────────────────────────────┘
+//
+// Content per trail lives on `Trail.learnings` (see TrailData.swift).
+// Currently 5 cards per trail, curator-authored.
 
 import SwiftUI
 
 struct JournalView: View {
     @EnvironmentObject var router: AppRouter
-
-    @State private var hasShared: Bool = false
 
     var trail: Trail { router.currentTrail }
 
@@ -21,207 +45,172 @@ struct JournalView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Header
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Today")
-                            .eyebrowStyle()
-                            .padding(.bottom, 10)
+                    recapMeta
+                        .padding(.top, 64)
+                        .padding(.horizontal, 22)
+                        .padding(.bottom, 22)
 
-                        Text(trail.name)
-                            .font(AppFont.sans(30, .bold))
-                            .foregroundStyle(AppColor.ink100)
-                            .tracking(-0.7)
+                    // Hairline under the meta header
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundStyle(AppColor.ink100.opacity(0.10))
+                        .padding(.horizontal, 22)
 
-                        Text(dateLine)
-                            .font(AppFont.sans(13, .medium))
-                            .foregroundStyle(AppColor.ink60)
-                            .padding(.top, 4)
-                    }
-                    .padding(.horizontal, 28)
-                    .padding(.top, 64)
-                    .padding(.bottom, 18)
+                    discoveryHero
+                        .padding(.top, 38)
+                        .padding(.bottom, 26)
 
-                    // Hero photo
-                    AsyncImage(url: trail.coverImageURL) { phase in
-                        switch phase {
-                        case .success(let img): img.resizable().scaledToFill()
-                        default: AppColor.ink25
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .aspectRatio(16.0/10.0, contentMode: .fill)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 22)
-
-                    // Stops walked
-                    VStack(alignment: .leading, spacing: 0) {
-                        Rectangle()
-                            .frame(height: 1)
-                            .foregroundStyle(AppColor.ink15)
-                            .padding(.bottom, 18)
-
-                        Text("Stops you walked")
-                            .eyebrowStyle()
-                            .padding(.bottom, 4)
-
-                        ForEach(trail.stops) { stop in
-                            stopRow(stop: stop)
-                        }
-                    }
-                    .padding(.horizontal, 28)
-
-                    // What you saw
-                    VStack(alignment: .leading, spacing: 0) {
-                        Rectangle()
-                            .frame(height: 1)
-                            .foregroundStyle(AppColor.ink15)
-                            .padding(.top, 22)
-                            .padding(.bottom, 18)
-
-                        Text("What you saw")
-                            .eyebrowStyle()
-
-                        Text("Sightings sync to iNaturalist next time you have signal — they help researchers track what lives where.")
-                            .font(AppFont.sans(12.5, .regular))
-                            .foregroundStyle(AppColor.ink60)
-                            .lineSpacing(2)
-                            .padding(.top, 8)
-                            .padding(.trailing, 24)
-
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(sightings, id: \.self) { s in
-                                HStack(spacing: 10) {
-                                    Circle()
-                                        .frame(width: 4, height: 4)
-                                        .foregroundStyle(AppColor.ink40)
-                                    Text(s)
-                                        .font(AppFont.sans(14, .regular))
-                                        .foregroundStyle(AppColor.ink100)
-                                }
-                                .padding(.vertical, 6)
-                            }
-                        }
-                        .padding(.top, 12)
-
-                        // Share button
-                        Button {
-                            hasShared = true
-                        } label: {
-                            HStack(spacing: 10) {
-                                Circle()
-                                    .fill(AppColor.lime)
-                                    .frame(width: 7, height: 7)
-                                    .shadow(color: AppColor.lime.opacity(0.6), radius: 4)
-                                Text(hasShared ? "Queued for iNaturalist" : "Share when connected")
-                                    .font(AppFont.sans(14, .semibold))
-                            }
-                            .foregroundStyle(hasShared ? AppColor.lime : AppColor.ink100)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .padding(.horizontal, 18)
-                            .background(
-                                Capsule().fill(hasShared ? AppColor.lime.opacity(0.06) : Color.clear)
-                            )
-                            .overlay(
-                                Capsule().stroke(
-                                    hasShared ? AppColor.lime.opacity(0.5) : AppColor.ink25,
-                                    lineWidth: 1
-                                )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, 16)
-
-                        Text(hasShared ? "Will sync when you have signal" : "3 sightings queued · waiting for signal")
-                            .font(AppFont.sans(10.5, .semibold))
-                            .tracking(1.6)
-                            .textCase(.uppercase)
-                            .foregroundStyle(AppColor.ink40)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 8)
-                    }
-                    .padding(.horizontal, 28)
-                    .padding(.bottom, 32)
+                    discoveriesStream
+                        .padding(.horizontal, 22)
+                        .padding(.bottom, 48)
                 }
-                .padding(.bottom, 24)
             }
             .scrollIndicators(.hidden)
 
-            // Floating close button
-            Button {
-                router.closeJournal()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(AppColor.ink100)
-                    .frame(width: 32, height: 32)
-                    .background(AppColor.glassDark88, in: Circle())
-                    .overlay(Circle().stroke(AppColor.hairlineHi, lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 64)
-            .padding(.trailing, 24)
+            closeButton
+                .padding(.top, 64)
+                .padding(.trailing, 24)
         }
     }
 
-    private var dateLine: String {
+    // MARK: - Recap meta (compact horizontal header)
+
+    private var recapMeta: some View {
+        HStack(alignment: .center, spacing: 14) {
+            // Lime check seal — like a wax stamp confirming the loop closed.
+            ZStack {
+                Circle()
+                    .fill(AppColor.lime.opacity(0.10))
+                    .overlay(Circle().stroke(AppColor.lime.opacity(0.55), lineWidth: 1))
+                    .frame(width: 38, height: 38)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppColor.lime)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(trail.name)
+                    .font(AppFont.sans(17, .bold))
+                    .foregroundStyle(AppColor.ink100)
+                    .tracking(-0.3)
+                Text(metaStats)
+                    .font(AppFont.sans(12, .medium))
+                    .foregroundStyle(AppColor.ink60)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var metaStats: String {
         let f = DateFormatter()
-        f.dateFormat = "MMM d, yyyy"
+        f.dateFormat = "MMM d"
         let dateStr = f.string(from: Date())
         let miles = trail.distanceMiles == floor(trail.distanceMiles)
             ? String(format: "%.0f", trail.distanceMiles)
             : String(format: "%.1f", trail.distanceMiles)
-        let mins = trail.durationMinutes
-        let timeStr: String = (mins >= 60)
-            ? "\(mins / 60) hr \(mins % 60) min"
-            : "\(mins) min"
-        return "\(dateStr) · \(miles) mi · \(timeStr)"
+        return "\(dateStr) · \(miles) mi · \(formattedDuration) · \(trail.stops.count) stops"
     }
 
-    private func stopRow(stop: TrailStop) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(AppColor.lime.opacity(0.10))
-                    .overlay(Circle().stroke(AppColor.lime.opacity(0.45), lineWidth: 1))
-                    .frame(width: 26, height: 26)
-                Text("\(stop.number)")
-                    .font(AppFont.sans(11, .heavy))
-                    .foregroundStyle(AppColor.lime)
+    /// "30 min" / "1 hr" / "1 hr 12 min" — same friendly format used
+    /// elsewhere in the app (picker, tour completion).
+    private var formattedDuration: String {
+        let m = trail.durationMinutes
+        if m < 60 { return "\(m) min" }
+        let h = m / 60
+        let r = m % 60
+        return r == 0 ? "\(h) hr" : "\(h) hr \(r) min"
+    }
+
+    // MARK: - Discovery hero (big lime count)
+
+    private var discoveryHero: some View {
+        VStack(spacing: 10) {
+            Text("\(trail.learnings.count)")
+                .font(AppFont.sans(80, .bold))
+                .tracking(-3.0)
+                .foregroundStyle(AppColor.lime)
+                .shadow(color: AppColor.lime.opacity(0.20), radius: 26)
+                .monospacedDigit()
+            Text("Discoveries today")
+                .eyebrowStyle(AppColor.ink60)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Discoveries stream (the learning cards)
+
+    private var discoveriesStream: some View {
+        VStack(spacing: 14) {
+            ForEach(Array(trail.learnings.enumerated()), id: \.element.id) { idx, learning in
+                learningCard(learning: learning, index: idx + 1)
             }
-            .padding(.top, 2)
+        }
+    }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(stop.name.uppercased())
-                    .font(AppFont.sans(10, .heavy))
-                    .tracking(2.0)
-                    .foregroundStyle(AppColor.ink60)
-
-                Text(stop.journalFact)
-                    .font(AppFont.sans(15, .medium))
+    private func learningCard(learning: Learning, index: Int) -> some View {
+        ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(learning.anchor)
+                    .font(AppFont.sans(28, .bold))
                     .foregroundStyle(AppColor.ink100)
-                    .tracking(-0.2)
+                    .tracking(-0.7)
+                    .lineSpacing(2)
+                    .padding(.trailing, 36)  // breathing room for corner number
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(learning.body)
+                    .font(AppFont.sans(14.5, .medium))
+                    .foregroundStyle(AppColor.ink100.opacity(0.95))
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .padding(.horizontal, 22)
+            .padding(.top, 24)
+            .padding(.bottom, 22)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(
+                    colors: [
+                        AppColor.ink100.opacity(0.045),
+                        AppColor.ink100.opacity(0.015),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(AppColor.ink100.opacity(0.12), lineWidth: 1)
+            )
+
+            // "01"–"05" corner number, lime, dim.
+            Text(String(format: "%02d", index))
+                .font(AppFont.sans(10.5, .heavy))
+                .tracking(1.8)
+                .foregroundStyle(AppColor.lime.opacity(0.55))
+                .monospacedDigit()
+                .padding(.top, 14)
+                .padding(.trailing, 18)
         }
-        .padding(.vertical, 14)
-        .overlay(
-            Rectangle()
-                .frame(height: 1)
-                .foregroundStyle(AppColor.ink15),
-            alignment: .top
-        )
     }
 
-    /// Sample sightings — would be populated from on-device CV later.
-    private let sightings: [String] = [
-        "Eastern hemlock",
-        "Great rhododendron, budding",
-        "Wood thrush — heard, not seen"
-    ]
+    // MARK: - Close button
+
+    private var closeButton: some View {
+        Button {
+            router.closeJournal()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(AppColor.ink100)
+                .frame(width: 32, height: 32)
+                .background(AppColor.glassDark88, in: Circle())
+                .overlay(Circle().stroke(AppColor.hairlineHi, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 #Preview {
