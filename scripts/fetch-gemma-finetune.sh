@@ -1,25 +1,34 @@
 #!/usr/bin/env bash
-# Swap the bundled Gemma 4 E2B (stock mlx-community 4-bit) with the
-# finetune at TimS-ml/gemma-4-E2B/mlx_vlm_g128_sft_aug_enwiki on
-# HuggingFace. The folder name decodes as:
-#   mlx_vlm   → MLX-format VLM checkpoint (drop-in for VLMModelFactory)
-#   g128      → group_size=128 quantization
-#   sft       → supervised finetune
-#   aug_enwiki → augmented with enwiki training data
+# Swap the bundled Gemma 4 E2B with a checkpoint subfolder under
+# TimS-ml/gemma-4-E2B on HuggingFace. The repo is gated, so an HF
+# token with read access is required.
 #
-# The repo is gated, so an HF token with read access is required. Pass
-# it via env var (NOT as an arg, so it doesn't end up in shell history
-# or process listings):
+# Usage:
+#   HF_TOKEN=hf_xxx bash scripts/fetch-gemma-finetune.sh                       # default subfolder
+#   HF_TOKEN=hf_xxx bash scripts/fetch-gemma-finetune.sh hotfix_baseline6-step2000_4bit
 #
-#   HF_TOKEN=hf_xxx bash scripts/fetch-gemma-finetune.sh
+# Some known subfolders:
+#   mlx_vlm_g128_sft_aug_enwiki        # original "full" finetune;
+#                                      #   catastrophic forgot non-plant content
+#   hotfix_baseline6-step2000_4bit     # earlier step (2k) — less forgetting,
+#                                      #   used as the hotfix while a fix bakes
+#
+# Folder-name decoding cheatsheet:
+#   mlx_vlm  → MLX-format VLM (drop-in for VLMModelFactory)
+#   g128     → group_size=128 quantization
+#   sft      → supervised finetune
+#   aug_*    → augmented with the given training data
+#   step*    → checkpoint at the given training step
+#   4bit     → 4-bit quantization
 #
 # Behavior:
-#   1. If Models/Gemma/ contains the stock model and Models/Gemma.stock/
-#      doesn't exist, MOVE Models/Gemma → Models/Gemma.stock (one-shot
-#      backup of the original).
+#   1. If Models/Gemma/ exists and Models/Gemma.stock/ doesn't, MOVE
+#      Models/Gemma → Models/Gemma.stock (one-shot backup of stock).
+#      On subsequent runs, Models/Gemma/ is wiped before downloading
+#      the new subfolder — the stock backup is preserved.
 #   2. Create a fresh Models/Gemma/ and pull every file from the
-#      finetune subfolder into it (flattens the HF subfolder prefix).
-#   3. Apply the same processor_config.json patch fetch-gemma.sh uses:
+#      requested subfolder into it (flattens the HF subfolder prefix).
+#   3. Apply the processor_config.json patch fetch-gemma.sh uses:
 #      hoist size/mean/std/do_normalize from image_processor to top
 #      level, force size to 960x672 for Gemma 4's trained pooler.
 #
@@ -36,23 +45,31 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
 fi
 
 REPO="TimS-ml/gemma-4-E2B"
-SUBFOLDER="mlx_vlm_g128_sft_aug_enwiki"
+SUBFOLDER="${1:-mlx_vlm_g128_sft_aug_enwiki}"
 API="https://huggingface.co/api/models/${REPO}/tree/main/${SUBFOLDER}"
 RESOLVE="https://huggingface.co/${REPO}/resolve/main/${SUBFOLDER}"
+echo "==> Subfolder: $SUBFOLDER"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/HikeCompanion/Resources/Models/Gemma"
 BACKUP="$ROOT/HikeCompanion/Resources/Models/Gemma.stock"
 
 # --- one-shot backup of the stock model ------------------------------
-if [[ -d "$DEST" && ! -d "$BACKUP" ]]; then
-  # Heuristic: if the existing Gemma/ has the stock config (3 GB
-  # safetensors, not 3.4 GB), back it up. We don't actually verify the
-  # hash — just confirm there's something there worth saving.
-  if [[ -f "$DEST/config.json" ]]; then
-    echo "==> Backing up current Gemma/ → Gemma.stock/"
-    mv "$DEST" "$BACKUP"
-  fi
+# Only backs up if Models/Gemma.stock/ doesn't already exist. On every
+# subsequent run (swapping between finetunes), we wipe Models/Gemma/
+# fresh — the stock backup is the canonical anchor and must not be
+# overwritten by a finetune.
+if [[ -d "$DEST" && ! -d "$BACKUP" && -f "$DEST/config.json" ]]; then
+  echo "==> First-time backup: Models/Gemma/ → Models/Gemma.stock/"
+  mv "$DEST" "$BACKUP"
+elif [[ -d "$DEST" ]]; then
+  # Subsequent runs: wipe the previous finetune so partial downloads
+  # from a different subfolder don't get mixed in (re-run safety
+  # below still skips files of correct size, but only within the
+  # *current* subfolder — leftover files from a different finetune
+  # would silently linger).
+  echo "==> Wiping previous Models/Gemma/ (stock backup at Gemma.stock/ is preserved)"
+  rm -rf "$DEST"
 fi
 
 mkdir -p "$DEST"
