@@ -172,6 +172,19 @@ targets:
         # errors. Setting only — no behavior change beyond the
         # product filename being correct.
         PRODUCT_NAME: HikeCompanion
+        # @rpath for embedded frameworks. The app binary lives at
+        # `HikeCompanion.app/HikeCompanion`; embedded frameworks are
+        # at `HikeCompanion.app/Frameworks/KokoroSwift.framework/...`
+        # → relative to the executable, they're at
+        # `@executable_path/Frameworks`. The Xcode default for new
+        # app targets is exactly that string, but xcodegen 2.x
+        # doesn't always inject it. Without this entry, dyld can't
+        # find @rpath/KokoroSwift.framework at launch and the app
+        # crashes with DYLD 1 / "Library missing" — even though
+        # the framework IS embedded in the .app correctly.
+        LD_RUNPATH_SEARCH_PATHS:
+          - $(inherited)
+          - "@executable_path/Frameworks"
         PRODUCT_BUNDLE_IDENTIFIER: com.lijuncheng16.HikeCompanion
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES
