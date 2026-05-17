@@ -34,91 +34,9 @@ struct DetailView: View {
             AppColor.mapBg.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Top nav: back arrow + centered title
-                HStack(alignment: .center, spacing: 12) {
-                    Button {
-                        router.backToPicker()
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(AppColor.ink100)
-                            .frame(width: 32, height: 32)
-                            .background(.black.opacity(0.4), in: Circle())
-                    }
-
-                    VStack(spacing: 2) {
-                        Text(trail.name)
-                            .font(AppFont.sans(17, .bold))
-                            .foregroundStyle(AppColor.ink100)
-                            .tracking(-0.3)
-                        Text(trail.parkLocation.uppercased())
-                            .font(AppFont.sans(10, .heavy))
-                            .tracking(1.8)
-                            .foregroundStyle(AppColor.ink60)
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    // Spacer to balance the back button
-                    Color.clear.frame(width: 32, height: 32)
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, 60)
-                .padding(.bottom, 8)
-
-                // Full-screen trail map
-                ZStack {
-                    // Subtle radial highlights from the mockup
-                    RadialGradient(
-                        colors: [AppColor.lime.opacity(0.05), .clear],
-                        center: UnitPoint(x: 0.5, y: 0.3),
-                        startRadius: 20,
-                        endRadius: 200
-                    )
-
-                    TrailMapView(trail: trail, activeStop: 1, passedThroughStop: 0)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                }
-
-                // Bottom action card
-                VStack(spacing: 14) {
-                    // One-line trail tagline (mockup commit 7c5ba6c —
-                    // sits above the stats row and below the chrome).
-                    Text(trail.summary)
-                        .font(AppFont.sans(14.5, .regular))
-                        .foregroundStyle(AppColor.ink100.opacity(0.92))
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(2)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 4)
-
-                    HStack(spacing: 10) {
-                        statText(value: formattedMiles, suffix: "mi")
-                        smallDot
-                        statText(value: durationLabel.0, suffix: durationLabel.1)
-                        smallDot
-                        statText(value: "\(trail.stopCount)", suffix: "stops")
-                        smallDot
-                        Text(trail.difficulty)
-                            .foregroundStyle(AppColor.ink80)
-                    }
-                    .font(AppFont.sans(13.5, .medium))
-
-                    ctaButton
-                }
-                .padding(.horizontal, 22)
-                .padding(.top, 18)
-                .padding(.bottom, 22)
-                .background(
-                    Color(red: 15/255, green: 16/255, blue: 13/255).opacity(0.95)
-                        .overlay(
-                            Rectangle()
-                                .frame(height: 1)
-                                .foregroundStyle(AppColor.hairline),
-                            alignment: .top
-                        )
-                )
+                topHeader
+                mapCanvas
+                bottomAction
             }
         }
         // Demo-mode framing — fires on every Begin tap.
@@ -148,6 +66,153 @@ struct DetailView: View {
             downloadTask?.cancel()
             downloadTask = nil
         }
+    }
+
+    // MARK: - Top header (mockup: .dm-top)
+
+    /// Three-line magazine stack: location eyebrow → trail name (hero) →
+    /// summary subtitle (centered). The summary moved here from the
+    /// bottom action card per the upstream design — qualitative info
+    /// ("where + what + what kind of") all sits at the top together;
+    /// the bottom card stays focused on numbers + the commit.
+    private var topHeader: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Button {
+                router.backToPicker()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppColor.ink100)
+                    .frame(width: 32, height: 32)
+                    .background(.black.opacity(0.4), in: Circle())
+            }
+
+            VStack(spacing: 0) {
+                Text(trail.parkLocation.uppercased())
+                    .font(AppFont.sans(10, .heavy))
+                    .tracking(1.8)
+                    .foregroundStyle(AppColor.ink60)
+                    .padding(.bottom, 6)
+
+                Text(trail.name)
+                    .font(AppFont.sans(22, .bold))
+                    .foregroundStyle(AppColor.ink100)
+                    .tracking(-0.44)
+                    .lineSpacing(1)
+                    .multilineTextAlignment(.center)
+
+                Text(trail.summary)
+                    .font(AppFont.sans(13, .regular))
+                    .foregroundStyle(AppColor.ink100.opacity(0.78))
+                    .lineSpacing(2)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
+                    .padding(.horizontal, 4)
+            }
+            .frame(maxWidth: .infinity)
+
+            // Spacer to balance the back button so the title centers
+            // correctly. Mirrors the mockup's empty 32-px div.
+            Color.clear.frame(width: 32, height: 32)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 60)
+        .padding(.bottom, 14)
+        .overlay(alignment: .bottom) {
+            // Hairline divider into the map — mirrors the .dm-top
+            // border-bottom and the matching one on .dm-action so the
+            // layout reads as three zones (title / map / action).
+            Rectangle()
+                .frame(height: 1)
+                .foregroundStyle(AppColor.ink100.opacity(0.06))
+        }
+    }
+
+    // MARK: - Map canvas (mockup: .dm-canvas)
+
+    private var mapCanvas: some View {
+        ZStack {
+            // Subtle radial highlights from the mockup.
+            RadialGradient(
+                colors: [AppColor.lime.opacity(0.05), .clear],
+                center: UnitPoint(x: 0.5, y: 0.3),
+                startRadius: 20,
+                endRadius: 200
+            )
+
+            TrailMapView(trail: trail, activeStop: 1, passedThroughStop: 0)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+        }
+    }
+
+    // MARK: - Bottom action card (mockup: .dm-action)
+
+    /// "Numbers + the commit." Summary deliberately not here — it's in
+    /// the top header now. Stats row uses bold values inline with
+    /// ink-80 suffix text, larger than the previous iteration (16 pt
+    /// vs 13.5 pt) so the row has real weight under the map.
+    private var bottomAction: some View {
+        VStack(spacing: 0) {
+            statsRow
+                .padding(.bottom, 18)
+            ctaButton
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 18)
+        .padding(.bottom, 22)
+        .background(
+            Color(red: 15/255, green: 16/255, blue: 13/255).opacity(0.95)
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundStyle(AppColor.hairline),
+                    alignment: .top
+                )
+        )
+    }
+
+    /// "2.0 mi · 1 hr · 5 stops · Moderate" — bold value + light unit.
+    /// Mirrors `.dm-stats b` (ink-100 bold) interleaved with non-bold
+    /// suffix (ink-80), divided by 3.5-pt ink-40 dots.
+    private var statsRow: some View {
+        HStack(spacing: 12) {
+            statPart(value: formattedMiles, suffix: "mi")
+            dmDot
+            statPart(value: durationLabel.0, suffix: durationLabel.1)
+            dmDot
+            statPart(value: "\(trail.stopCount)", suffix: "stops")
+            dmDot
+            Text(trail.difficulty)
+                .font(AppFont.sans(16, .medium))
+                .foregroundStyle(AppColor.ink80)
+                .tracking(-0.16)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Bold value (ink-100) directly followed by a non-bold suffix
+    /// (ink-80) — both at the same point size so they read as one
+    /// phrase like "2.0 mi" rather than two columns.
+    private func statPart(value: String, suffix: String) -> some View {
+        HStack(spacing: 4) {
+            Text(value)
+                .font(AppFont.sans(16, .bold))
+                .foregroundStyle(AppColor.ink100)
+            Text(suffix)
+                .font(AppFont.sans(16, .medium))
+                .foregroundStyle(AppColor.ink80)
+        }
+        .tracking(-0.16)
+    }
+
+    /// 3.5-pt round dot between stat groups. Mirrors `.dm-stats .d-dot`.
+    private var dmDot: some View {
+        Circle()
+            .frame(width: 3.5, height: 3.5)
+            .foregroundStyle(AppColor.ink40)
     }
 
     // MARK: - State-aware CTA (mockup: design/mockups.html .cta-btn)
@@ -275,21 +340,6 @@ struct DetailView: View {
         }
     }
 
-    private func statText(value: String, suffix: String) -> some View {
-        HStack(spacing: 4) {
-            Text(value)
-                .font(AppFont.sans(13.5, .bold))
-                .foregroundStyle(AppColor.ink100)
-            Text(suffix)
-                .foregroundStyle(AppColor.ink80)
-        }
-    }
-
-    private var smallDot: some View {
-        Circle()
-            .frame(width: 3, height: 3)
-            .foregroundStyle(AppColor.ink40)
-    }
 }
 
 struct LimePressStyle: ButtonStyle {
