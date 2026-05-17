@@ -34,7 +34,7 @@ struct PickerView: View {
                     .padding(.bottom, 26)
 
                     // Cards
-                    VStack(spacing: 14) {
+                    VStack(spacing: 18) {
                         ForEach(TrailData.all) { trail in
                             TrailCard(trail: trail) {
                                 router.choose(trail)
@@ -80,15 +80,7 @@ struct PickerView: View {
 
                     Color.clear.frame(height: 32)
                 }
-                // iOS adds the dynamic-island/status-bar safe-area inset
-                // automatically; this is just visual breathing room past
-                // it. Was 70 — but that doubled up with the safe area
-                // and dropped the first card visibly low on the screen
-                // (≈ 129 pt of dead space above the header on iPhone 15
-                // Pro). 12 brings it in line with the mockup's intended
-                // top spacing (`padding: 70px 0 24px` on `.picker`,
-                // which absorbs the browser's status-bar zone).
-                .padding(.top, 12)
+                .padding(.top, 70)  // status bar / dynamic island clearance
             }
             .scrollIndicators(.hidden)
         }
@@ -111,66 +103,35 @@ private struct TrailCard: View {
 
     var body: some View {
         Button(action: onTap) {
-            // Photo fills a strict 16:9 card; region / name / tagline /
-            // stats overlay the bottom-left of the image, separated from
-            // the photo by a soft top-to-bottom scrim. Mirrors the
-            // upstream `.t-card` markup in design/mockups.html — three
-            // stacked z-layers (.photo / .scrim / .body).
+            // Picture-on-top + text-panel-below.
             //
-            // Why this shape (back from the earlier photo-on-top +
-            // text-panel-below):
-            //   - Cards were too tall — the dedicated text panel added
-            //     ~150 px of height on top of the 16:9 image, making
-            //     three cards push out of the picker viewport.
-            //   - 16:9 fits modern landscape hike photos cleanly enough
-            //     that worst-case bottom-crop is rarely a problem; the
-            //     scrim does the legibility work the text panel used to.
-            //   - Matches the mockup, which is the authoritative spec.
-            ZStack(alignment: .bottomLeading) {
-                photoLayer
-                scrimLayer
-                textOverlay
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
-                if case .walked(let date) = status {
-                    walkedBadge(date: date)
-                        .padding(14)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                }
+            // Why this shape (vs the previous overlay-with-scrim):
+            //   - The image's native aspect (most Wikimedia hike photos
+            //     are landscape ~3:2) doesn't match the old 16:13 card,
+            //     so .scaledToFill cropped unpredictably and the bottom
+            //     of the photo (and the text overlaid on it) was getting
+            //     visually swallowed.
+            //   - A dedicated text panel guarantees the region / trail
+            //     name / stats line are always readable regardless of
+            //     how the photo crops.
+            //   - Layout is now deterministic per row: the image area
+            //     is exactly 16:9 of the card width, the text panel sits
+            //     beneath at its intrinsic content height.
+            VStack(spacing: 0) {
+                photoArea
+                textPanel
             }
-            // Explicit fixed height instead of an aspect-ratio modifier.
-            // Aspect ratio on a ZStack inside a ScrollView negotiates
-            // height through its children's intrinsic content; that
-            // sometimes lets the card grow past the requested 21:9.
-            // A hard `.frame(height:)` is deterministic — every card
-            // is exactly this many points tall, the photo is cropped
-            // by `.scaledToFill().clipped()` to fit, and the text
-            // overlay anchors to the bottom with predictable headroom.
-            //
-            // 160 pt: text block at the bottom takes ~62 pt for the
-            // region/name/tagline/stats stack; that leaves ~98 pt of
-            // photo showing above it through the scrim with the badge
-            // sitting top-right. Compromise height — 124 pt felt
-            // cramped (text dominated), 200+ pt felt banner-like
-            // (photo dominated). 160 reads as a card with a real
-            // hero image and a tidy footer of content.
             .frame(maxWidth: .infinity)
-            .frame(height: 160)
             .background(AppColor.ink25)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                // Whisper-thin cream outline so the card edge reads
-                // cleanly against the dark picker background.
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(AppColor.ink100.opacity(0.07), lineWidth: 1)
-            )
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
         .buttonStyle(CardPressStyle())
     }
 
-    /// Bottom layer — the trail's cover photo, scaled to fill the
-    /// entire card. Crops are taken from the centre.
-    private var photoLayer: some View {
+    /// Top of the card — the trail's cover photo at a 16:9 landscape
+    /// aspect (matches typical Wikimedia hike photos so the crop is
+    /// minimal). Status badge floats top-right.
+    private var photoArea: some View {
         AsyncImage(url: trail.coverImageURL) { phase in
             switch phase {
             case .empty:
@@ -183,72 +144,66 @@ private struct TrailCard: View {
                 AppColor.ink25
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
+        .aspectRatio(16.0/9.0, contentMode: .fill)
         .clipped()
+        .overlay(alignment: .topTrailing) {
+            statusBadge
+                .padding(14)
+        }
     }
 
-    /// Middle layer — top-to-bottom darkening so the text below stays
-    /// legible without text shadows on the type. Transparent at the
-    /// top so the establishing image isn't buried. Stops match the
-    /// mockup's `.t-card .scrim` linear-gradient.
-    private var scrimLayer: some View {
-        LinearGradient(
-            stops: [
-                .init(color: .black.opacity(0.0),  location: 0.18),
-                .init(color: .black.opacity(0.32), location: 0.44),
-                .init(color: .black.opacity(0.70), location: 0.72),
-                .init(color: .black.opacity(0.92), location: 1.0),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .allowsHitTesting(false)
-    }
-
-    /// Top layer — the text block, anchored to bottom-left. Region
-    /// eyebrow / trail name / one-line tagline / stats row. Sized to
-    /// fit comfortably inside a 21:9 card (~75 pt of photo above this
-    /// block at iPhone widths), so the tagline is clamped to a single
-    /// line and the inter-row spacing kept tight.
-    private var textOverlay: some View {
-        VStack(alignment: .leading, spacing: 2) {
+    /// Bottom of the card — solid dark text panel with region eyebrow,
+    /// trail name, the one-line tagline, and the length / difficulty /
+    /// time stats row. Tagline added per design/mockups.html
+    /// commit 7c5ba6c ("Add one-line trail summary to picker cards
+    /// and detail view"); reads as a subtitle under the name.
+    private var textPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
             Text(trail.region.uppercased())
-                .font(AppFont.sans(9.5, .semibold))
+                .font(AppFont.sans(10, .semibold))
                 .tracking(1.6)
-                .foregroundStyle(AppColor.ink100.opacity(0.85))
+                .foregroundStyle(AppColor.ink60)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
 
             Text(trail.name)
-                .font(AppFont.sans(20, .bold))
+                .font(AppFont.sans(24, .bold))
                 .foregroundStyle(AppColor.ink100)
-                .tracking(-0.4)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-                .padding(.top, 1)
+                .fixedSize(horizontal: false, vertical: true)
 
             Text(trail.summary)
-                .font(AppFont.sans(11.5, .regular))
-                .foregroundStyle(AppColor.ink100.opacity(0.85))
-                .lineSpacing(0)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .padding(.top, 2)
+                .font(AppFont.sans(13, .regular))
+                .foregroundStyle(AppColor.ink80)
+                .lineSpacing(2)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 1)
 
-            HStack(spacing: 7) {
+            HStack(spacing: 10) {
                 Text("\(formattedMiles) mi")
                 circleDot
                 Text(trail.difficulty)
                 circleDot
                 Text(durationLabel)
             }
-            .font(AppFont.sans(11.5, .medium))
-            .foregroundStyle(AppColor.ink100.opacity(0.92))
-            .padding(.top, 3)
+            .font(AppFont.sans(13, .medium))
+            .foregroundStyle(AppColor.ink60)
+            .padding(.top, 4)
             .lineLimit(1)
             .minimumScaleFactor(0.85)
         }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 18)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            // Slightly lifted from the page background so the panel
+            // reads as a distinct surface under the photo.
+            Color(red: 0.078, green: 0.082, blue: 0.071)  // ~ #14150f
+        )
     }
 
     /// "60 min" or "1 hr" or "1 hr 15 min" — friendlier than always
@@ -274,20 +229,29 @@ private struct TrailCard: View {
             .foregroundStyle(AppColor.ink100.opacity(0.55))
     }
 
-    /// Top-right "Completed [date]" pill, shown only on a trail walked
-    /// in this session. Picker cards are otherwise pure choice — no
-    /// "Ready" / "Download · MB" pill (those retired in design/README.md
-    /// items 17 & 23: download is the detail-view CTA's job; "ready"
-    /// added no information since every trail is ready by default).
-    private func walkedBadge(date: String) -> some View {
-        Text("Completed \(date)")
-            .font(AppFont.sans(10.5, .semibold))
-            .tracking(0.6)
-            .textCase(.uppercase)
-            .foregroundStyle(AppColor.ink100.opacity(0.85))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.black.opacity(0.5), in: Capsule())
+    /// Picker cards are pure choice — photo, region, name, stats — with
+    /// the one exception of a completed-walk date badge that links back
+    /// to the journal. The `Ready` and `Download · MB` pills from
+    /// earlier iterations have been retired: the download decision now
+    /// lives on the detail view's state-aware CTA (design/README.md
+    /// item 17), and "ready" is the default for every trail so its
+    /// badge added noise without information.
+    @ViewBuilder
+    private var statusBadge: some View {
+        switch status {
+        case .walked(let date):
+            Text(date)
+                .font(AppFont.sans(10.5, .semibold))
+                .tracking(0.6)
+                .textCase(.uppercase)
+                .foregroundStyle(AppColor.ink100.opacity(0.75))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.black.opacity(0.4), in: Capsule())
+
+        case .ready, .downloadable:
+            EmptyView()
+        }
     }
 }
 
