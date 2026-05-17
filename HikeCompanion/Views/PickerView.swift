@@ -255,9 +255,12 @@ private struct TrailCard: View {
             Text(trail.summary)
                 .font(AppFont.sans(14.5, .regular))
                 .foregroundStyle(AppColor.ink100.opacity(0.92))
-                .lineSpacing(2)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineSpacing(1)
+                // 1-line tagline (was 2) — guarantees the stats row
+                // below has predictable space inside the card height
+                // without minimumScaleFactor collapse antics.
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .padding(.top, 4)
 
             HStack(spacing: 10) {
@@ -271,7 +274,11 @@ private struct TrailCard: View {
             .foregroundStyle(AppColor.ink100.opacity(0.95))
             .padding(.top, 6)
             .lineLimit(1)
-            .minimumScaleFactor(0.85)
+            // Drop minimumScaleFactor — with lineLimit(1) it can
+            // interact with SwiftUI's layout pass and collapse the
+            // HStack to zero height when the width is constrained.
+            // The stats text always fits at 14 pt on any iPhone size
+            // we care about, so scaling isn't actually needed.
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .shadow(color: .black.opacity(0.55), radius: 4, x: 0, y: 1)
