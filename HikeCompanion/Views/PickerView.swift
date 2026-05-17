@@ -80,7 +80,12 @@ struct PickerView: View {
 
                     Color.clear.frame(height: 32)
                 }
-                .padding(.top, 70)  // status bar / dynamic island clearance
+                // No extra top padding — the iOS safe-area inset
+                // already provides dynamic-island clearance (~59 pt on
+                // iPhone 15 Pro). Anything on top of that is dead
+                // space. Header sits as close to the dynamic island as
+                // possible without clipping.
+                .padding(.top, 0)
             }
             .scrollIndicators(.hidden)
         }
