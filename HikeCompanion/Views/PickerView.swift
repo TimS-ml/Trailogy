@@ -134,7 +134,7 @@ private struct TrailCard: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 200)
+            .frame(height: 275)
             .background(AppColor.ink25)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
