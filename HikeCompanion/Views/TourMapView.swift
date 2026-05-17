@@ -33,16 +33,32 @@ struct TourMapView: View {
                     }
                     .buttonStyle(.plain)
 
-                    VStack(spacing: 2) {
+                    // Three-line centered stack: trail name as the hero,
+                    // "STOP X OF N" as a lime eyebrow, stop name below.
+                    // The stop name gets its own line so the title reads
+                    // as title / eyebrow / subtitle rather than a single
+                    // long bullet-separated string that wraps awkwardly.
+                    VStack(spacing: 4) {
                         Text(trail.name)
-                            .font(AppFont.sans(16, .bold))
-                            .tracking(-0.3)
+                            .font(AppFont.sans(18, .bold))
+                            .tracking(-0.36)
                             .foregroundStyle(AppColor.ink100)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                         if let s = activeStop {
-                            Text("Stop \(s.number) of \(trail.stops.count) · \(s.name)".uppercased())
+                            Text("Stop \(s.number) of \(trail.stops.count)".uppercased())
                                 .font(AppFont.sans(10, .heavy))
                                 .tracking(1.8)
                                 .foregroundStyle(AppColor.lime)
+                                .multilineTextAlignment(.center)
+                            Text(s.name)
+                                .font(AppFont.sans(12.5, .medium))
+                                .foregroundStyle(AppColor.ink80)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                                .padding(.top, 1)
                         }
                     }
                     .frame(maxWidth: .infinity)
