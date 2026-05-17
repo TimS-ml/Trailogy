@@ -201,7 +201,12 @@ private struct TrailCard: View {
     private var photoLayer: some View {
         Color.clear
             .overlay {
-                AsyncImage(url: trail.coverImageURL) { phase in
+                // CachedTrailImage tries the on-disk copy from
+                // ImageStore first (populated by the detail-view
+                // Download CTA), then falls back to AsyncImage over
+                // the network. After download → renders from disk →
+                // works offline.
+                CachedTrailImage(trail: trail, kind: .cover) { phase in
                     switch phase {
                     case .empty:
                         AppColor.ink25

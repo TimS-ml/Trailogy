@@ -63,9 +63,20 @@ final class AppRouter: ObservableObject {
     }
 
     init() {
-        downloadedTrailIDs = Set(
-            TrailData.all.filter(\.initiallyDownloaded).map(\.id)
-        )
+        // Seed from two sources stacked together:
+        //   • Hardcoded `initiallyDownloaded` (PoC anchor — Old
+        //     Field starts as "Completed" so the demo always has
+        //     at least one walked trail visible)
+        //   • Any trail whose images are actually on disk from a
+        //     previous session's download. The disk scan makes
+        //     downloads survive app relaunch even though the set
+        //     itself isn't persisted to UserDefaults — the disk
+        //     IS the persistence layer.
+        var seed = Set(TrailData.all.filter(\.initiallyDownloaded).map(\.id))
+        for trail in TrailData.all where ImageStore.hasAllLocal(for: trail) {
+            seed.insert(trail.id)
+        }
+        downloadedTrailIDs = seed
     }
 
     func isDownloaded(_ trail: Trail) -> Bool {

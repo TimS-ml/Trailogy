@@ -357,7 +357,11 @@ struct WalkingView: View {
             showTourMap = true
         } label: {
             ZStack(alignment: .bottomLeading) {
-                AsyncImage(url: currentStop.imageURL) { phase in
+                // CachedTrailImage tries the on-disk download from
+                // ImageStore first, falls back to network AsyncImage.
+                // Once the trail's been downloaded via the detail-view
+                // CTA, every stop hero renders offline with no flash.
+                CachedTrailImage(trail: trail, kind: .stop(currentStop.number)) { phase in
                     switch phase {
                     case .success(let img): img.resizable().scaledToFill()
                     default: AppColor.ink25

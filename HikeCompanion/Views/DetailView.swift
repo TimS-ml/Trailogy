@@ -305,10 +305,16 @@ struct DetailView: View {
         }
     }
 
-    /// Mockup CTA: 110ms ticks, +6..+13% per tick, 260ms settle at 100%
-    /// before flipping to .ready. The faux progress is decorative — the
-    /// models are bundled at install — but the affordance teaches the
-    /// "offline pack" mental model the production app would use.
+    /// Real download — fetches every trail image (cover + each stop)
+    /// to local disk via ImageStore. Percentage reflects actual image
+    /// count completion, not a Task.sleep loop. Once complete, the
+    /// picker card / stop hero / recap can render offline because
+    /// CachedTrailImage loads from disk first.
+    ///
+    /// Failure path: per-image failures are silently absorbed inside
+    /// ImageStore (logged, partial coverage still useful). If the
+    /// whole call throws (e.g. directory create failed), we flip the
+    /// CTA back to .download so the user can retry.
     private func startDownload() {
         downloadTask?.cancel()
         ctaPercent = 0
@@ -316,14 +322,25 @@ struct DetailView: View {
             ctaState = .downloading
         }
         downloadTask = Task { @MainActor in
-            while ctaPercent < 100 && !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(110))
-                if Task.isCancelled { return }
-                let next = min(100, ctaPercent + 6 + Double.random(in: 0...7))
-                withAnimation(.linear(duration: 0.12)) {
-                    ctaPercent = next
+            do {
+                try await ImageStore.downloadAll(for: trail) { p in
+                    if Task.isCancelled { return }
+                    withAnimation(.linear(duration: 0.15)) {
+                        ctaPercent = p * 100
+                    }
                 }
+            } catch {
+                if Task.isCancelled { return }
+                print("[Download] failed for \(trail.id): \(error.localizedDescription)")
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    ctaState = .download
+                    ctaPercent = 0
+                }
+                return
             }
+            if Task.isCancelled { return }
+            // Brief settle at 100% before flipping — visual
+            // confirmation the bar filled.
             try? await Task.sleep(for: .milliseconds(260))
             if Task.isCancelled { return }
             router.markDownloaded(trail)
