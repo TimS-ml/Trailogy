@@ -829,6 +829,18 @@ struct WalkingView: View {
 
     // MARK: - Photo context bar
 
+    /// Photo-in-context banner — sits above the lyric area while a
+    /// captured photo is queued for follow-up questions. Mirrors
+    /// design/mockups.html `.photo-context` exactly:
+    ///
+    ///   container 8 pt padding · 12 pt h-gap · 14 pt corner ·
+    ///   ink-88 glass bg · lime-32 % border · soft black drop shadow
+    ///   plus a lime-6 % ambient glow
+    ///
+    ///   pc-thumb 68×68, 11-pt corner, ink-8 % border
+    ///   pc-eyebrow 9.5 pt heavy, tracking 0.20em, lime · pc-dot 5×5
+    ///   pc-sub 13.5 pt medium, ink-80, 6 pt under eyebrow
+    ///   pc-dismiss 28×28 round, ink-60 over white-5 %
     private var photoContextBar: some View {
         HStack(spacing: 12) {
             // Real captured thumbnail. Falls back to a placeholder
@@ -846,13 +858,14 @@ struct WalkingView: View {
                         )
                 }
             }
-            .frame(width: 56, height: 56)
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .frame(width: 68, height: 68)
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 9).stroke(AppColor.hairline, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(AppColor.ink100.opacity(0.08), lineWidth: 1)
             )
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 7) {
                     Circle()
                         .fill(AppColor.lime)
@@ -860,12 +873,12 @@ struct WalkingView: View {
                         .shadow(color: AppColor.lime.opacity(0.7), radius: 3)
                     Text("Photo in context")
                         .font(AppFont.sans(9.5, .heavy))
-                        .tracking(1.6)
+                        .tracking(1.9)
                         .textCase(.uppercase)
                         .foregroundStyle(AppColor.lime)
                 }
                 Text("Ask a follow-up question")
-                    .font(AppFont.sans(12, .medium))
+                    .font(AppFont.sans(13.5, .medium))
                     .foregroundStyle(AppColor.ink80)
             }
 
@@ -888,7 +901,7 @@ struct WalkingView: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(AppColor.lime.opacity(0.32), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: 8)
+        .shadow(color: .black.opacity(0.35), radius: 15, x: 0, y: 8)
         .shadow(color: AppColor.lime.opacity(0.06), radius: 12)
     }
 
