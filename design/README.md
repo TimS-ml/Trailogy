@@ -1,7 +1,7 @@
 # Trailogy
 
 Interactive prototype of an audio-first nature companion app.
-Single-file HTML mockup that walks through trail selection, in-tour narration with location-triggered stops, on-demand voice questions, photo-as-context capture, and a post-hike journal.
+Single-file HTML mockup that walks through trail selection, in-tour narration with location-triggered stops, on-demand voice questions, photo-as-context capture, and a post-hike **recap** (knowledge digest of what the user learned).
 
 ## Local preview
 
@@ -38,10 +38,10 @@ Four named views, swapped via `go(viewName)` with opacity cross-fades:
 
 | `data-view` | Role |
 |---|---|
-| `picker` | Landing: trail cards with download flow (no profile / account chrome — anonymous by design) |
-| `detail` | Full-screen Leaflet map + Begin action |
-| `walking` | Tour-in-progress; state machine |
-| `journal` | At-home reading: per-stop entries, observations, share-when-connected |
+| `picker` | Landing: lime-glow heading *"Where should Trailogy take you?"* + lime location-pin + three trail cards with summary taglines (no profile / account chrome — anonymous by design) |
+| `detail` | Full-screen Leaflet map + state-aware bottom CTA (Download → Begin) |
+| `walking` | Tour-in-progress; state machine; three controls at the bottom (camera, mic, more) |
+| `journal` | Post-hike recap (user-facing: **"Recap"**, internal name still `journal`). Trailmark + trail name + meta + Takeaways list. Knowledge digest, not trip report. |
 
 ### Tour state machine (walking view)
 
@@ -88,13 +88,20 @@ Single `TRAILS` object at the top of the script. Keyed by `kildoo`, `oldfield`, 
 
 ```js
 {
-  name, location, distance, distanceUnit,
+  name, location, summary,        // summary = one-line tagline for picker + detail
+  distance, distanceUnit,
   timeNum, timeUnit, difficulty,
+  downloadSize, downloaded,       // for state-aware Download → Begin CTA
+  walked,                         // false until the user finishes this trail in-session
+  walkedDate,                     // null until completion; stamped to today (e.g. "May 16")
   stops: [
     { num, name, lat, lng, img,
       sentences: [...],
       payoff,    // optional · resolves prev stop's lookFor (omit on stop 1)
       lookFor }  // optional · prompts the walk to the next stop (omit on last)
+  ],
+  learnings: [                    // takeaway cards rendered in the recap
+    { headline, flavor, category }  // category drives the corner icon
   ],
   path: [[lat, lng], …],          // every stop is a vertex on the polyline
   segmentDistances: [...]          // per-leg copy for the Walking-to indicator
@@ -102,6 +109,42 @@ Single `TRAILS` object at the top of the script. Keyed by `kildoo`, `oldfield`, 
 ```
 
 `selectedTrail` (`'kildoo'` by default) and a `syncTrailRuntime()` helper keep `stopData`, `STOP_POS`, `SEGMENT_DISTANCES`, and the progress-bar marker DOM in sync whenever the active trail changes.
+
+### Recap (the post-hike screen)
+
+User-facing label: **"Recap"** (internal route name is still `journal`). Reached three ways:
+
+1. Tapping the **Completed {date}** badge on a picker card. The badge only appears on trails the user has finished this session — it's injected at runtime by `renderPickerBadges()` based on `TRAILS[id].walked`, with `walkedDate` formatted from `new Date()` at completion time.
+2. The "Open recap" button on the tour-complete screen
+3. The "End tour" item in the More sheet
+
+Layout, top to bottom, all centered:
+
+- **Trailmark** — three filled lime rectangles in a triangle. Literally the U.S. trail-terminus blaze convention; means "trail ends here." Distinctive, brand-specific (`Trailogy → trail-mark`), works on its own without an "Complete" label.
+- **Trail name** — `TRAILS[selectedTrail].name`
+- **Meta line** — `{walkedDate} · {distance} · {stops} stops`, uppercase tracked, lime middots between items
+- **"Takeaways" header** — small lime uppercase tracked label
+- **Takeaway cards** — rendered dynamically by `renderRecap()` from `TRAILS[selectedTrail].learnings`. Each card: small lime category illustration (top-right) + 19 px cream headline sentence + 14 px dim cream flavor sentence. Soft staggered entrance animation.
+
+`renderRecap()` updates the trail name + meta line + cards container from data; called from `go('journal')`. Tapping the picker journal-link badge sets `selectedTrail` first so the recap reflects that trail.
+
+### Category icon system
+
+Each takeaway carries a `category`; the illustration is looked up from `CATEGORY_ICONS` at render time by `paintCategoryIcons()`. Nine categories cover ~95% of trail content:
+
+| Category | Illustration | Example content |
+|---|---|---|
+| `geology` | sedimentary strata + pebbles | rock age, cliffs, boulders |
+| `water` | droplet | creeks, falls, hydrology |
+| `plant` | leaf with vein | trees, wildflowers, ferns |
+| `wildlife` | two birds in flight | animals, birds, insects |
+| `history` | folded-corner page + date lines | events, settlers, place names |
+| `architecture` | covered bridge | bridges, mills, built features |
+| `sky` | sun with eight rays | weather, light, seasons |
+| `chemistry` | three bonded atoms (triangle) | compounds, reactions |
+| `other` | six-line asterisk | fallback for anything that doesn't classify |
+
+For production with LLM-generated takeaways from user Q&A: the prompt is *"Summarize this exchange as `{ headline, flavor }`. Tag with one of: geology, water, plant, wildlife, history, architecture, sky, chemistry, other."* Reliable LLM classification task. No per-takeaway artwork needed.
 
 ### Map
 
@@ -113,6 +156,22 @@ Two map surfaces share this renderer so they always look identical:
 - **In-tour map** (`#tour-leaflet`, inside `.tm-canvas`) — full-screen overlay that slides up when the user taps the progress bar or the stop hero during a tour. `initTourMap(activeIdx)` / `rebuildTourMap(activeIdx)` mirror the detail pair but accept the tour state machine's `currentStopIdx` so the active marker pulses lime at the stop the user is actually at. Header rebinds to `<trail>` + `Stop N of M · <stop name>` on each open.
 
 `.dm-canvas` and `.tm-canvas` share the same Leaflet styling selectors so basemap brightness, attribution chrome, and polyline drop-shadow are identical between them.
+
+### Walking-view controls
+
+Three buttons at the bottom of the walking view, all at uniform 28 px gap:
+
+| Button | Size | Style | Purpose |
+|---|---|---|---|
+| 📷 `cam-btn` | 60 px | Lime outline | Optional photo context — opens viewfinder, photo becomes context for a follow-up voice question |
+| 🎤 `ask-btn` | **84 px** | **Lime fill** (primary) | Press-and-hold voice question. Headline interaction. Lime ripple animation while held. |
+| ⋯ `more-btn` | 56 px | Neutral outline | Utility menu (pause / end tour) |
+
+Visual hierarchy: **size + color + fill** carry the meaning. Mic is biggest + filled (primary). Camera is medium + lime-outlined (related secondary — same color family, smaller size). More is smallest + neutral-outlined (separate utility).
+
+**Camera tip popup** — on the user's first camera tap of a session, an iOS-style alert shows: *"I'm best at plants right now. Try a leaf, flower, or fern. I'll tell you what I see."* with **Cancel** and **Open camera** buttons. Tapping Cancel dismisses without marking the tip seen, so the user gets the explanation again next time. Tapping Open camera marks it seen and opens the viewfinder. Reset clears the flag.
+
+In production iOS the same pattern uses `UserDefaults` for the seen flag and launches the system `UIImagePickerController` after dismissal — no custom AVFoundation camera needed.
 
 ### Photography
 
@@ -147,6 +206,12 @@ Stats sourced from AllTrails / PA DCNR. Kildoo and Tranquil coordinates are geog
 15. **Demo-mode framing for hackathon judges.** The production app is location-based — each stop unlocks via Core Location when the user arrives. The prototype can't be at the trail, so the iOS-style alert on Begin carries the entire framing: *"Tours are location-based · On the trail, stops play when you arrive. This demo will auto-advance."* — primary button is *Begin Tour*. (An earlier iteration also kept a persistent `.demo-badge` on the walking view, but the alert proved clear enough on its own; the badge was removed to keep the walking screen free of demo-only chrome.) To ship, replace the AT_STOP_MS / BETWEEN_MS / APPROACHING_MS timers with Core Location region monitoring; the alert becomes a true error path that only fires when GPS is denied or the user is far from the trailhead.
 16. **Journal reframed as "what you learned."** First iteration was a trip report: route map + five photo-cards of the stops + sightings + share-when-connected. Replaced with a knowledge digest — four curator-authored **learning cards**, each anchored by a hero number/date/quantity (320 million years, 1874, 80 tons…) and a one-paragraph context. A separate **You asked** section carries the user's Q&A as the personal layer, visually distinct (italic question, lime left-border, soft lime tint). The route map became a full-bleed hero at the top with the **Loop closed** achievement card hanging over it; the lime check seal sits as a medallion at the boundary like a wax stamp. Stats reframed as a 3-column row (`2.0 · MILES · 5 · STOPS · 1:12 · HOURS`). Removed: per-stop photo cards, "What you saw" sightings, the share-when-connected button, the closing quote, the "Until next time" sign-off. The journal is now a takeaway, not a receipt.
 17. **Download moved from picker cards to the detail-view CTA.** First iteration put a `Download · 68 MB` pill on each picker card; the user had to make a file-management decision *before* seeing the trail. New flow puts the download as a state-aware CTA on the detail view — same lime button cycles through `download` (label "Download · 68 MB" + arrow icon) → `downloading` (animated dark progress fill + percentage) → `ready` ("Begin" + play icon). Single button position, three states. Picker cards become pure choice: photo, region, name, stats, plus a journal-link badge for completed walks. Trail data carries `downloadSize` + `downloaded: bool`. Old Field starts `downloaded: true` (already walked once); Kildoo and Tranquil start `downloaded: false`.
+18. **Picker heading + lime glow.** Opening copy *"Where should Trailogy take you?"* (17 px regular, with a small lime location-pin), centered above a soft lime radial gradient anchored top-left of the picker. Replaces an earlier "Start exploration · Trails nearby" pair. Warmer voice; the gradient is the only chrome decision visible on the landing screen.
+19. **Per-trail summary tagline.** Each trail card now carries a one-line `summary` (e.g., *"A loop through hemlocks older than the country."*) displayed between the trail name and the stats. Same string surfaces on the detail view's bottom action card. Differentiates trails by feel/character, not just by distance and difficulty.
+20. **Recap renamed user-facing: "Journal" → "Recap".** Internal route name stays `journal` for code stability; user-facing label is "Recap" everywhere it appears (Open recap button, badge aria-label).
+21. **Recap redesign #2 — trailmark + 9-category dynamic content.** Several iterations on the recap converged on the current form. Removed: the route map at the top, the lime-bordered "Loop closed" achievement card with hanging seal medallion, the "You walked the trail" hero line, the closing quote and sign-off, the per-stop photo cards. Replaced with: a brand-specific **trailmark** at the top (three filled lime rectangles in a triangle — the U.S. trail-end blaze convention), followed by trail name + uppercase tracked meta line with lime middots, a centered "Takeaways" header in lime uppercase, and **dynamic per-trail learning cards** rendered from `TRAILS[id].learnings`. Each card is `{ headline, flavor, category }`. The category drives a small lime corner illustration drawn from a 9-icon `CATEGORY_ICONS` lookup (geology, water, plant, wildlife, history, architecture, sky, chemistry, other). All three trails have 5 authored learnings (15 total). `renderRecap()` is called from `go('journal')` and populates the header + cards from `TRAILS[selectedTrail]`. Same `{ headline, flavor, category }` shape works for future LLM-generated takeaways from user Q&A — no per-takeaway artwork needed.
+22. **Walking-view controls hierarchy.** Three iterations: (a) original — mic primary, camera + more equal size. (b) Camera as twin primary with mic — rejected: photo is an addition to asking, not a coequal feature. (c) Final — mic biggest + lime fill (primary "ask"), camera medium + lime outline (related secondary — provides photo context), more smallest + neutral outline (utility menu). Equal gaps between all three. Workflow teaching happens via the camera-tip popup (first tap) and the photo-context strip (after capture), not via persistent button captions.
+23. **Completed-badge: dynamic, stamped at finish.** First iteration hardcoded a "Completed Apr 14" badge into the Old Field picker card's HTML, with each trail's `walkedDate` set to a demo string. Replaced with runtime logic: all three trails start `walked: false, walkedDate: null` (clean slate). When the user finishes a tour — either naturally via `enterComplete()` or by tapping End Tour from the more menu — `markTrailWalked(selectedTrail)` stamps `walked = true` and `walkedDate = todayLabel()` (formatted from `new Date()` via `Intl`, e.g. `"May 16"`). `renderPickerBadges()` runs on every `go('picker')` and idempotently injects / removes the badge button based on each trail's `walked` state. Reset clears `walked` + `walkedDate` across all trails. The picker now reflects the user's actual session history rather than a fixed demo state; in production the same fields would be persisted to the device (localStorage on web, `UserDefaults` / Core Data on iOS) so completions survive relaunch.
 
 ## Design tokens
 
@@ -160,7 +225,11 @@ Text             #f5f3ec   primary (soft off-white parchment)
                  #8a8881   meta
                  #5a5852   dim
 
-Accent           #d9f571   lime (single accent; active waypoint, primary CTAs — Begin / End tour / Open journal — mic pulse, ON THE WAY eyebrow)
+Accent           #d9f571   lime — single accent. Used for: active waypoint, primary CTAs
+                                    (Begin / Download / End tour / Open recap), mic + camera
+                                    buttons, ON THE WAY eyebrow, trailmark in recap,
+                                    location-pin in picker heading, soft picker glow,
+                                    category icons in recap cards, lime middots in stats lines.
                  #c1dd58   lime pressed
 ```
 
@@ -170,15 +239,16 @@ Typeface: Inter 400 / 500 / 600 / 700 via Google Fonts. Display sizes use `-0.02
 
 Plainspoken, slightly literary. Used surfaces:
 
-> Begin · Ask · Download · Listening · Walking to · Approaching · Tour complete · You walked the loop · Send when connected · Share when connected · Press and hold to ask anything · Hold the screen to ask anything
+> Where should Trailogy take you? · Begin · Download · Hold to ask · Listening · Walking to · Approaching · ON THE WAY · Tour complete · You walked the trail · Loop closed · View recap · Completed {date} · Takeaways · Photo in context · Ask a follow-up question · I'm best at plants right now · Snap a plant to identify
 
 ## Known limitations
 
 - **Coordinates are estimates for Kildoo and Tranquil** — visually plausible but not GPX-precise. The Old Field & Jennings loop is OSM-sourced and accurate. Real `.gpx` data would replace the `path` / `stops` arrays for the other two.
-- **Journal content is hardcoded for Kildoo.** The *Completed Apr 14* link on the Old Field & Jennings card opens the same Kildoo journal page. A per-trail journal would mirror the per-trail tour data structure.
-- **Photo context** uses a single cave image regardless of what was photographed. In production, the captured photo and a model-generated set of follow-up questions would replace `photoSentences` / `photoQuestions`.
+- **Photo context** uses a single cave image regardless of what was photographed. In production, the captured photo + a model-generated set of follow-up questions would replace `photoSentences` / `photoQuestions`. The image-recognition model (fine-tuned Gemma) is currently tuned for plants; the camera-tip popup names that limit upfront.
 - **Trail distances:** AllTrails lists Kildoo as 3.1 mi out-and-back in one place; DCNR signage calls the loop 2.0 mi. We use 2.0 mi.
-- **Tour completion summary** still reads `2.0 mi · 5 stops · 1 hr 12 min` regardless of which trail the user just finished. The numbers should be derived from `TRAILS[selectedTrail]` to match the picker / detail metadata.
+- **Completion history is in-memory only.** `walked` + `walkedDate` are stamped when the user finishes a tour but don't survive a page reload (same scope as the `downloaded` state). Production would mirror both into `localStorage` on web or `UserDefaults` / Core Data on iOS so the picker badges persist across launches.
+- **Recap takeaways are static per trail.** Production would augment the base set with 1–2 dynamically-generated takeaways from the user's voice Q&A during the walk. The `{ headline, flavor, category }` data shape and `renderRecap()` already handle dynamic content; only the augmentation source needs wiring.
+- **Tour completion summary on the walking screen** still reads `2.0 mi · 5 stops · 1 hr 12 min` regardless of which trail. Should be derived from `TRAILS[selectedTrail]` to match the picker / detail / recap metadata.
 
 ## Repo
 
