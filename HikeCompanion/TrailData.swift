@@ -767,11 +767,16 @@ enum TrailData {
     /// Kept as a helper here in case future code wants a single
     /// place to ask "what state is this trail in?"; PickerView reads
     /// the router directly today.
+    ///
+    /// `@MainActor` because it touches `AppRouter.walkedDateLabel`,
+    /// which is main-actor-isolated. Callers (PickerView's TrailCard)
+    /// are SwiftUI Views and therefore already on the main actor, so
+    /// no behavior change — just satisfies Swift 6's isolation checks.
+    @MainActor
     static func status(for trail: Trail, router: AppRouter) -> TrailStatus {
         if let date = router.walkedDateLabel(trail) {
             return .walked(dateLabel: date)
         }
         return .ready
-        }
     }
 }
