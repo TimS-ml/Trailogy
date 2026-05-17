@@ -165,6 +165,13 @@ targets:
         NSCameraUsageDescription: "Trailogy uses the camera so you can show what you're looking at when you ask a question."
     settings:
       base:
+        # Explicit PRODUCT_NAME — xcodegen 2.x doesn't always inject
+        # this from the target name. Without it, the build emits
+        # ".app" (no prefix) and you get "Multiple commands produce
+        # ...Debug-iphonesimulator/.app" / "duplicate output file"
+        # errors. Setting only — no behavior change beyond the
+        # product filename being correct.
+        PRODUCT_NAME: HikeCompanion
         PRODUCT_BUNDLE_IDENTIFIER: com.lijuncheng16.HikeCompanion
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES
