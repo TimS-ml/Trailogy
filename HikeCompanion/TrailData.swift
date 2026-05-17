@@ -382,29 +382,29 @@ enum TrailData {
         // Recap "Discoveries" — verbatim from design/mockups.html.
         learnings: [
             Learning(
-                anchor: "320 million years",
-                body: "Age of the sandstone in the layered cliffs. The orange streaks are iron oxide leached out of the rock by groundwater over geologic time.",
+                anchor: "The layered cliffs are 320 million years old.",
+                body: "Older than any forest — almost older than life on land. Laid down in shallow seas when the continents were still forming.",
                 category: .geology
             ),
             Learning(
-                anchor: "Iron oxide",
-                body: "What turns the cliff face orange — leached out of the sandstone by groundwater, stain by stain, over a very long time.",
+                anchor: "Iron oxide is what stains the cliffs orange.",
+                body: "The same compound as common rust, leached out by groundwater over geologic time. The cliff face turns deeper orange after rain.",
                 category: .chemistry
             ),
             Learning(
-                anchor: "Three centuries",
-                body: "Age of the eastern hemlocks leaning over the gorge above Kildoo Falls — older than the country itself.",
+                anchor: "Some hemlocks above the falls are 300 years old.",
+                body: "Older than the country. They lean over Kildoo Falls, holding the gorge edge with their roots — Eastern hemlock, Pennsylvania's state tree.",
                 category: .plant
             ),
             Learning(
-                anchor: "1874",
-                body: "The Covered Bridge was built this year — Howe truss design, one of two left in Pennsylvania. The mill ground grain here until 1928.",
+                anchor: "The covered bridge has stood here since 1874.",
+                body: "Howe truss design — one of only two left in Pennsylvania. The mill it served ground grain on this creek until 1928.",
                 category: .architecture
             ),
             Learning(
-                anchor: "80 tons",
-                body: "Weight of Slippery Rock — the sandstone boulder in the creek that gave the waterway its name. Algae keeps it slick.",
-                category: .geology
+                anchor: "Slippery Rock Creek gets its name from this boulder.",
+                body: "Eighty tons of sandstone in the streambed. Algae keeps it slick — locals say it's been polished smoother by a century and a half of water.",
+                category: .history
             )
         ],
         defaultRAGSubjects: ["geology", "plants"]
@@ -609,29 +609,29 @@ enum TrailData {
         // that distinguish this trail from the McConnells Mill gorge.
         learnings: [
             Learning(
-                anchor: "Seven years",
-                body: "How long large-flowered trillium takes to bloom from seed. The white-petaled carpet under the wildflower meadow is the result of decades of slow accumulation.",
+                anchor: "Trillium takes seven years to bloom from seed.",
+                body: "Three white petals on a single stem — Pennsylvania's most photographed spring wildflower. The plant can live 25 years if undisturbed.",
                 category: .plant
             ),
             Learning(
-                anchor: "1800s farms",
-                body: "The weathered fence posts in the understory mark the edges of farms that were here before the forest. The land reclaimed itself within a single human lifetime.",
+                anchor: "These woods were farmland a century ago.",
+                body: "The Wildflower Reserve regrew on abandoned fields after the 1930s. Old fence posts still mark forgotten property lines.",
                 category: .history
             ),
             Learning(
-                anchor: "Spring ephemerals",
-                body: "Trillium, Virginia bluebells, and Dutchman's breeches all bloom and seed in the brief window before the canopy closes. Most of the year they're invisible.",
+                anchor: "Spring ephemerals bloom and vanish in three weeks.",
+                body: "Virginia bluebells, Dutchman's breeches, trout lily — they catch sunlight before the canopy closes overhead, then retreat underground until next spring.",
                 category: .plant
             ),
             Learning(
-                anchor: "Pileated woodpecker",
-                body: "The largest woodpecker in the eastern forest. The clean rectangular holes in dead snags here are its work — chiseled out chasing carpenter ants.",
+                anchor: "The flute-like song you heard is a wood thrush.",
+                body: "Two pitches at once — the bird's syrinx splits its voice in two. Most often heard at dawn and dusk along the wooded ridges.",
                 category: .wildlife
             ),
             Learning(
-                anchor: "Raccoon Creek",
-                body: "The slope at the east overlook drops toward this creek — the watershed that defines the park, and a tributary of the Ohio River.",
-                category: .water
+                anchor: "The drumming was a pileated woodpecker.",
+                body: "The largest woodpecker in eastern North America — crow-sized, red-crested. They excavate rectangular holes searching for carpenter ants.",
+                category: .wildlife
             )
         ],
         defaultRAGSubjects: ["plants", "geology"]
@@ -747,29 +747,29 @@ enum TrailData {
         // toward Pittsburgh history + the geology of Fern Hollow.
         learnings: [
             Learning(
-                anchor: "644 acres",
-                body: "Frick Park is Pittsburgh's largest historic park — built up from Helen Clay Frick's 1919 bequest and continuously expanded since.",
+                anchor: "Frick Park is 644 acres in the heart of Pittsburgh.",
+                body: "Henry Clay Frick donated the original land in 1919, with a $2 million trust to maintain it. It's still the city's largest historic park.",
                 category: .history
             ),
             Learning(
-                anchor: "150+ years",
-                body: "Some of the oaks and tulip poplars in Forest Grove pre-date the city's industrial era. They survived because this slope was too steep to log.",
+                anchor: "Some oaks here are over 150 years old.",
+                body: "The forest regrew after the surrounding hills were logged for industrial Pittsburgh. These trees were saplings when the park was first donated.",
                 category: .plant
             ),
             Learning(
-                anchor: "Skunk cabbage",
-                body: "One of the first plants to bloom each spring — can melt its own snow with metabolic heat, sometimes visible against the late frost.",
-                category: .plant
+                anchor: "Skunk cabbage can melt its own snow.",
+                body: "The plant generates metabolic heat — up to 70°F warmer than the surrounding air. First to bloom each year, sometimes as early as February.",
+                category: .chemistry
             ),
             Learning(
-                anchor: "Fern Hollow Creek",
-                body: "Drains into Nine Mile Run downstream. The whole watershed sat under industrial slag for most of the 20th century before the 2002 restoration.",
-                category: .water
-            ),
-            Learning(
-                anchor: "Pittsburgh Coal",
-                body: "The coal-bearing strata beneath the park formed about 300 million years ago, when this region was a coastal swamp near the equator.",
+                anchor: "The valley was carved during the last ice age.",
+                body: "Glacial meltwater cut Fern Hollow when the ice sheets retreated 12,000 years ago — the same flow that shaped much of southwestern Pennsylvania.",
                 category: .geology
+            ),
+            Learning(
+                anchor: "The red bricks in the creek are from Pittsburgh's streetcars.",
+                body: "Many of the city's old trolley routes were paved with these. Some washed downhill into creek beds, polished smooth by decades of water.",
+                category: .history
             )
         ],
         defaultRAGSubjects: ["plants", "geology"]

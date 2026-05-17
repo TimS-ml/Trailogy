@@ -721,6 +721,14 @@ struct WalkingView: View {
 
     private var quietIndicator: some View {
         VStack(spacing: 14) {
+            // 3-dot walking-step animation. Each dot lifts in
+            // sequence (0 / 0.18 s / 0.36 s offsets) — visual rhythm
+            // for "you're moving between stops." Goes lime + glows
+            // when approaching, ink-60 when between. Ports the
+            // mockup's `.wq-dots` keyframe block.
+            WalkingDots(isApproaching: phase == .approaching)
+                .padding(.bottom, 6)
+
             Text(phase == .approaching ? "Approaching" : "Walking to")
                 .eyebrowStyle(phase == .approaching ? AppColor.lime : AppColor.ink60)
                 .padding(.bottom, 0)
@@ -1587,11 +1595,17 @@ struct WalkingView: View {
     /// Per-phase haptic intensity — emphasis grows with the
     /// significance of the transition. Soft for the "departure"
     /// (atStop → between), light for the "anticipation"
-    /// (between → approaching), medium for the "arrival"
+    /// (between → approaching), heavy for the "arrival"
     /// (approaching → atStop). Tour completion uses the notification
     /// generator's `.success` pattern (different physical sensation
     /// than the impact generator) so it doesn't feel like just
     /// another transition.
+    ///
+    /// Arrival was previously `.medium`; bumped to `.heavy` because
+    /// the moment a user arrives at a new stop is the strongest
+    /// signal they need from the phone — they're about to hear new
+    /// narration. We `prepare()` first so the buzz fires reliably
+    /// without the system's first-impact lag.
     private func fireTransitionHaptic(for newPhase: TourPhase) {
         switch newPhase {
         case .between:
@@ -1599,7 +1613,9 @@ struct WalkingView: View {
         case .approaching:
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         case .atStop:
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            let generator = UIImpactFeedbackGenerator(style: .heavy)
+            generator.prepare()
+            generator.impactOccurred(intensity: 1.0)
         case .complete:
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         }
@@ -1817,6 +1833,44 @@ private struct BreathePulse: ViewModifier {
 extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+/// Three small dots that lift in sequence — the "I'm walking" beat
+/// shown during the between/approaching phases. Ports the mockup's
+/// `.wq-dots` block (design/mockups.html):
+///   • 7×7 circles, gap 10
+///   • ink-60 during `between`, lime + glow during `approaching`
+///   • 1.4 s cycle, each dot offset by 0.18 s
+///   • Each dot pulses translateY 0 → -4 → 0 with opacity 0.3 → 1.0
+private struct WalkingDots: View {
+    let isApproaching: Bool
+
+    /// Drives the wave animation. Flipped from `false` to `true`
+    /// on appear; the `.repeatForever` modifier owns the loop.
+    @State private var lifted: Bool = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(0..<3, id: \.self) { i in
+                Circle()
+                    .fill(isApproaching ? AppColor.lime : AppColor.ink60)
+                    .frame(width: 7, height: 7)
+                    .shadow(
+                        color: isApproaching ? AppColor.lime.opacity(0.5) : .clear,
+                        radius: isApproaching ? 4 : 0
+                    )
+                    .opacity(lifted ? 1.0 : 0.3)
+                    .offset(y: lifted ? -4 : 0)
+                    .animation(
+                        .easeInOut(duration: 0.7)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(i) * 0.18),
+                        value: lifted
+                    )
+            }
+        }
+        .onAppear { lifted = true }
     }
 }
 

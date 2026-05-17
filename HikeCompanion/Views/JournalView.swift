@@ -194,10 +194,15 @@ struct JournalView: View {
     private func learningCard(_ learning: Learning) -> some View {
         ZStack(alignment: .topTrailing) {
             VStack(alignment: .leading, spacing: 10) {
+                // Anchor is now a full-sentence headline (was a
+                // terse hero phrase like "320 million years"). Weight
+                // dropped bold → semibold to match mockup's
+                // `.lc-headline { font-weight: 600 }`; bold felt
+                // heavy when the line is a complete sentence.
                 Text(learning.anchor)
-                    .font(AppFont.sans(22, .bold))
+                    .font(AppFont.sans(21, .semibold))
                     .foregroundStyle(AppColor.ink100)
-                    .tracking(-0.4)
+                    .tracking(-0.36)
                     .lineSpacing(2)
                     .padding(.trailing, 50)  // clearance for the 42px corner icon
                     .fixedSize(horizontal: false, vertical: true)
