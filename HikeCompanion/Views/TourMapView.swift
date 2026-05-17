@@ -19,6 +19,14 @@ struct TourMapView: View {
         ZStack {
             AppColor.mapBg.ignoresSafeArea()
 
+            // Mockup positions `.tm-top` at `padding: 60px 18px 8px`
+            // from the browser viewport top. iOS safe-area inset
+            // would otherwise add ~59 pt on iPhone 15 Pro on top of
+            // the 60-pt padding, making the title sit ~119 pt down.
+            // `.ignoresSafeArea(edges: .top)` (applied to the VStack
+            // below) makes the 60 pt resolve to literal screen-top
+            // distance, matching the mockup. Title sits at 60 pt,
+            // clearing the dynamic island (~59 pt) by a 1-pt margin.
             VStack(spacing: 0) {
                 // Top bar: close + title
                 HStack(alignment: .center, spacing: 12) {
@@ -97,6 +105,13 @@ struct TourMapView: View {
                 .padding(.vertical, 14)
                 .padding(.bottom, 30)
             }
+            // Ignore top safe area only — lets the 60-pt top padding
+            // resolve to "60 pt from screen top" (matching the mockup's
+            // `.tm-top { padding: 60px ... }`). Bottom retains the
+            // automatic home-indicator clearance so the footer doesn't
+            // overlap the ~34-pt indicator zone — the mockup's 30-px
+            // bottom padding would otherwise land inside it.
+            .ignoresSafeArea(edges: .top)
         }
     }
 

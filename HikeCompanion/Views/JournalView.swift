@@ -49,7 +49,15 @@ struct JournalView: View {
             ScrollView {
                 VStack(alignment: .center, spacing: 0) {
                     recapHeader
-                        .padding(.top, 92)
+                        // 64 pt to match the mockup's
+                        // `.journal { padding: 64px 0 32px }`.
+                        // Was 92 pt — chosen earlier to clear iOS's
+                        // safe-area inset; now redundant because the
+                        // ScrollView ignores top safe area below, so
+                        // 64 pt resolves to literal screen-top
+                        // distance and clears the dynamic island
+                        // (~59 pt) with a 5-pt margin.
+                        .padding(.top, 64)
                         .padding(.horizontal, 22)
                         .padding(.bottom, 36)
 
@@ -63,10 +71,21 @@ struct JournalView: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollIndicators(.hidden)
+            // Top-only safe-area ignore so the 64-pt recapHeader
+            // top padding lands at literal screen-top distance,
+            // matching the mockup. Bottom keeps its automatic
+            // home-indicator clearance so the last discovery card
+            // doesn't get clipped by the indicator.
+            .ignoresSafeArea(edges: .top)
 
             closeButton
                 .padding(.top, 64)
                 .padding(.trailing, 24)
+                // Same top-only ignore — close button sits 64 pt
+                // from screen top, matching `.j-close-fixed
+                // { top: 64px; right: 24px }` in the mockup. iOS
+                // safe-area would otherwise push it down ~123 pt.
+                .ignoresSafeArea(edges: .top)
         }
     }
 
