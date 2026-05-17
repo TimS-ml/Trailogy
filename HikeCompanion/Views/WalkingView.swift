@@ -313,6 +313,19 @@ struct WalkingView: View {
                 .transition(.opacity)
             }
         }
+        // Match the mockup's `.walking` container, which positions
+        // children from the viewport edges (no safe-area concept in
+        // a browser): `.stop-hero` at `top: 70px`, `.walk-controls`
+        // at `bottom: 60px`, etc. Without this, the iOS safe-area
+        // inset would add ~59 pt at the top and ~34 pt at the bottom
+        // on iPhone 15 Pro on top of those numbers — making the
+        // tour UI sit visibly lower (top) and higher (bottom) than
+        // the mockup intends. With ignoresSafeArea, the .padding
+        // values below resolve to literal distance from screen
+        // edges, matching the mockup's pixel positions exactly.
+        // Bottom controls at 60 pt still clear the home indicator
+        // (~34 pt zone), so no usability regression.
+        .ignoresSafeArea()
     }
 
     // MARK: - Top progress / stop hero
