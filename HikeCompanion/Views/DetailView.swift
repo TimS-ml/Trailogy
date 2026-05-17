@@ -142,9 +142,12 @@ struct DetailView: View {
                 endRadius: 200
             )
 
+            // Edge-to-edge — no inset padding around the map. The
+            // top header's hairline divider and the bottom action
+            // card's hairline divider are the layout's "three-zone"
+            // dividers; padding around the map would re-introduce a
+            // visible margin between those dividers and the tiles.
             TrailMapView(trail: trail, activeStop: 1, passedThroughStop: 0)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
         }
     }
 

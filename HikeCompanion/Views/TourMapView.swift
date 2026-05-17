@@ -60,9 +60,10 @@ struct TourMapView: View {
                         center: .center,
                         startRadius: 20, endRadius: 240
                     )
+                    // Edge-to-edge — no inset padding. The map should
+                    // fill the canvas region between the top bar and
+                    // the footer with no visible margin around it.
                     TrailMapView(trail: trail, activeStop: activeStopNumber, passedThroughStop: activeStopNumber)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
                 }
 
                 // Footer
