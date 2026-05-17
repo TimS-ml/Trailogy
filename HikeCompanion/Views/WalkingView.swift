@@ -64,6 +64,20 @@ struct WalkingView: View {
     @State private var showTourMap: Bool = false
     @State private var showCamera: Bool = false
     @State private var showPhotoContext: Bool = false
+
+    /// First-tap teaching popup for the camera button. Explains that
+    /// the model is tuned for plants right now ("I'm best at plants —
+    /// try a leaf or fern"). Two-button alert: Cancel (no-op, user
+    /// will see the tip again on next tap) and Open camera (marks
+    /// `cameraTipSeen` so it doesn't re-appear). Mirrors mockup
+    /// design/mockups.html `.cam-tip-alert` (commit 902828e) — gives
+    /// the user an honest expectation of what the VLM can do before
+    /// they start framing photos.
+    ///
+    /// `cameraTipSeen` is session-only by design (matches the mockup);
+    /// to make it survive app relaunch swap to UserDefaults later.
+    @State private var showCameraTip: Bool = false
+    @State private var cameraTipSeen: Bool = false
     /// The most recently captured photo (Phase 3a). Held in memory only —
     /// dropped when the user dismisses the photo-context strip or ends
     /// the tour. Downscaled to ~1280 px on the long edge inside
@@ -151,6 +165,31 @@ struct WalkingView: View {
         .animation(.easeInOut(duration: 0.22), value: showMoreSheet)
         .animation(.easeInOut(duration: 0.3), value: tts.isSpeaking)
         .animation(.easeInOut(duration: 0.3), value: currentlySpeaking)
+        // First-tap camera teaching popup. Honest expectation-set —
+        // the VLM is plant-tuned right now, so we tell the user before
+        // they spend a frame on something we can't classify well.
+        // Cancel leaves cameraTipSeen = false so the user sees the
+        // same explanation on the next tap; Open camera marks it seen
+        // and launches CameraView. Mirrors design/mockups.html
+        // commit 902828e.
+        .alert("I'm best at plants right now", isPresented: $showCameraTip) {
+            Button("Cancel", role: .cancel) {
+                // No-op — leave cameraTipSeen false so the popup
+                // re-appears on next tap.
+            }
+            Button("Open camera") {
+                cameraTipSeen = true
+                // Small delay so the alert dismissal animation doesn't
+                // fight the camera viewfinder fade-in (mockup uses 220ms).
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(220))
+                    showCamera = true
+                }
+            }
+        } message: {
+            Text("Try a leaf, flower, or fern.\nI'll tell you what I see.")
+        }
+        .tint(AppColor.lime)
     }
 
     private var emptyTrailFallback: some View {
@@ -825,7 +864,7 @@ struct WalkingView: View {
                         .textCase(.uppercase)
                         .foregroundStyle(AppColor.lime)
                 }
-                Text("Hold Ask to follow up about this")
+                Text("Ask a follow-up question")
                     .font(AppFont.sans(12, .medium))
                     .foregroundStyle(AppColor.ink80)
             }
@@ -889,47 +928,72 @@ struct WalkingView: View {
 
     // MARK: - Bottom controls
 
+    /// Three buttons sit as direct children of the controls row with a
+    /// uniform 28 px gap. Their sizes encode the hierarchy:
+    ///   • Mic — 84 px, lime-filled. The primary "ask" affordance.
+    ///   • Camera — 60 px, lime-outlined. Related secondary — also
+    ///     starts an ask, but with photo context.
+    ///   • More — 56 px, neutral-outlined. Utility menu (pause / end).
+    /// Ported from design/mockups.html commit 902828e — see commit
+    /// notes for why the earlier asymmetric "ask-group" was dropped.
     private var bottomControls: some View {
         HStack(spacing: 28) {
-            // Camera
-            Button {
-                showCamera = true
-            } label: {
-                Image(systemName: "camera")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(AppColor.ink100)
-                    .frame(width: 56, height: 56)
-                    .background(.white.opacity(0.05), in: Circle())
-                    .overlay(Circle().stroke(AppColor.ink100.opacity(0.18), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-
-            // Mic — large, lime, hold-to-speak
+            cameraButton
             micButton
-
-            // More
-            Button {
-                showMoreSheet.toggle()
-            } label: {
-                Image(systemName: isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(isPaused ? AppColor.lime : AppColor.ink100)
-                    .frame(width: 56, height: 56)
-                    .background(
-                        showMoreSheet
-                            ? AppColor.lime.opacity(0.10)
-                            : AppColor.ink100.opacity(0.05)
-                        , in: Circle()
-                    )
-                    .overlay(
-                        Circle().stroke(
-                            showMoreSheet || isPaused ? AppColor.lime.opacity(0.45) : AppColor.ink100.opacity(0.18),
-                            lineWidth: 1
-                        )
-                    )
-            }
-            .buttonStyle(.plain)
+            moreButton
         }
+    }
+
+    /// 60 px, lime-outlined. "Ask with a photo" — the visual hierarchy
+    /// (lime outline, larger than the More button, smaller than mic)
+    /// reads as "related to the primary mic action."
+    private var cameraButton: some View {
+        Button {
+            // First-tap shows the camera-tip teaching popup; subsequent
+            // taps skip straight to the camera. Matches the mockup's
+            // openCamera() gate on cameraTipSeen.
+            if cameraTipSeen {
+                showCamera = true
+            } else {
+                showCameraTip = true
+            }
+        } label: {
+            Image(systemName: "camera")
+                .font(.system(size: 21, weight: .medium))
+                .foregroundStyle(AppColor.lime)
+                .frame(width: 60, height: 60)
+                .background(AppColor.lime.opacity(0.06), in: Circle())
+                .overlay(Circle().stroke(AppColor.lime.opacity(0.45), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 56 px, neutral-outlined. Opens the More sheet (which contains
+    /// Pause / End tour). The shown icon doubles as the current
+    /// pause/play state — tapping it doesn't toggle directly; the
+    /// sheet does the work and uses haptics.
+    private var moreButton: some View {
+        Button {
+            showMoreSheet.toggle()
+        } label: {
+            Image(systemName: isPaused ? "play.fill" : "pause.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(isPaused ? AppColor.lime : AppColor.ink100)
+                .frame(width: 56, height: 56)
+                .background(
+                    showMoreSheet
+                        ? AppColor.lime.opacity(0.10)
+                        : AppColor.ink100.opacity(0.05)
+                    , in: Circle()
+                )
+                .overlay(
+                    Circle().stroke(
+                        showMoreSheet || isPaused ? AppColor.lime.opacity(0.45) : AppColor.ink100.opacity(0.18),
+                        lineWidth: 1
+                    )
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     private var micButton: some View {
@@ -938,11 +1002,11 @@ struct WalkingView: View {
             if isHolding {
                 Circle()
                     .stroke(AppColor.lime.opacity(0.55), lineWidth: 2)
-                    .frame(width: 88, height: 88)
+                    .frame(width: 84, height: 84)
                     .modifier(RippleAnim(delay: 0))
                 Circle()
                     .stroke(AppColor.lime.opacity(0.55), lineWidth: 2)
-                    .frame(width: 88, height: 88)
+                    .frame(width: 84, height: 84)
                     .modifier(RippleAnim(delay: 1))
             }
 

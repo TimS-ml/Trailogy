@@ -4,33 +4,36 @@
 // Mockup: design/mockups.html → `.journal` view (current iteration).
 // Per design/README.md item 16: the journal was reframed from a trip
 // report (route map + per-stop photo cards + sightings list +
-// share-when-connected button) into a knowledge digest. Each card is
-// "a museum catalog entry" anchored by a hero number/date/quantity.
+// share-when-connected button) into a knowledge digest.
 //
-// Layout:
+// Visual treatment ported from upstream commit ad5a216 ("Recap
+// redesign: trailmark, 9-category icons, dynamic per-trail content"):
+//
 //   ┌──────────────────────────────────────────────────────┐
-//   │ ⊙ Kildoo Trail                                  [X] │
-//   │   May 3 · 2.0 mi · 1 hr · 5 stops                    │
-//   ├──────────────────────────────────────────────────────┤
+//   │                                                  [X] │
+//   │                       ▲                              │
+//   │                     ▲   ▲          ← trailmark      │
+//   │                                       (3 lime        │
+//   │                                       rectangles =   │
+//   │                                       US trail-end   │
+//   │                                       blaze)         │
+//   │                  Kildoo Trail                        │
+//   │           May 16 · 2.0 mi · 1 hr · 5 stops           │
 //   │                                                      │
-//   │                       5                              │
-//   │                Discoveries today                     │
+//   │                  TAKEAWAYS                           │
 //   │                                                      │
-//   ├──────────────────────────────────────────────────────┤
-//   │ ┌──────────────────────────────────────────────  01 ┐│
+//   │ ┌──────────────────────────────────────────────  ⛰  ┐│
 //   │ │ 320 million years                                  ││
-//   │ │ Age of the sandstone in the layered cliffs. The    ││
-//   │ │ orange streaks are iron oxide leached out of the   ││
-//   │ │ rock by groundwater over geologic time.            ││
+//   │ │ Age of the sandstone in the layered cliffs ...     ││
 //   │ └────────────────────────────────────────────────────┘│
-//   │ ┌──────────────────────────────────────────────  02 ┐│
+//   │ ┌──────────────────────────────────────────────  ⚛  ┐│
 //   │ │ Iron oxide ...                                     ││
 //   │ └────────────────────────────────────────────────────┘│
-//   │ (etc through 05)                                     │
+//   │ (etc through 05, each with its own category icon)   │
 //   └──────────────────────────────────────────────────────┘
 //
 // Content per trail lives on `Trail.learnings` (see TrailData.swift).
-// Currently 5 cards per trail, curator-authored.
+// Each Learning carries a `category` that selects the icon.
 
 import SwiftUI
 
@@ -44,26 +47,20 @@ struct JournalView: View {
             AppColor.screenBg.ignoresSafeArea()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    recapMeta
-                        .padding(.top, 64)
+                VStack(alignment: .center, spacing: 0) {
+                    recapHeader
+                        .padding(.top, 92)
                         .padding(.horizontal, 22)
+                        .padding(.bottom, 36)
+
+                    takeawaysEyebrow
                         .padding(.bottom, 22)
-
-                    // Hairline under the meta header
-                    Rectangle()
-                        .frame(height: 1)
-                        .foregroundStyle(AppColor.ink100.opacity(0.10))
-                        .padding(.horizontal, 22)
-
-                    discoveryHero
-                        .padding(.top, 38)
-                        .padding(.bottom, 26)
 
                     discoveriesStream
                         .padding(.horizontal, 22)
                         .padding(.bottom, 48)
                 }
+                .frame(maxWidth: .infinity)
             }
             .scrollIndicators(.hidden)
 
@@ -73,43 +70,74 @@ struct JournalView: View {
         }
     }
 
-    // MARK: - Recap meta (compact horizontal header)
+    // MARK: - Recap header (centered stack: trailmark + name + meta)
 
-    private var recapMeta: some View {
-        HStack(alignment: .center, spacing: 14) {
-            // Lime check seal — like a wax stamp confirming the loop closed.
-            ZStack {
-                Circle()
-                    .fill(AppColor.lime.opacity(0.10))
-                    .overlay(Circle().stroke(AppColor.lime.opacity(0.55), lineWidth: 1))
-                    .frame(width: 38, height: 38)
-                Image(systemName: "checkmark")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(AppColor.lime)
-            }
+    /// The recap's "stamp" composition. Three filled lime rectangles
+    /// in a triangle = the actual trail-end blaze used on US hiking
+    /// trails (Appalachian Trail convention). Brand-specific to
+    /// Trailogy: the mark IS a trail mark. For people who know the
+    /// convention it reads as "trail terminus"; for everyone else
+    /// it's a deliberate lime triple-rectangle symbol.
+    private var recapHeader: some View {
+        VStack(spacing: 16) {
+            trailmark
+                .frame(width: 36, height: 40)
+                .foregroundStyle(AppColor.lime)
+                .shadow(color: AppColor.lime.opacity(0.25), radius: 8)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(trail.name)
-                    .font(AppFont.sans(17, .bold))
-                    .foregroundStyle(AppColor.ink100)
-                    .tracking(-0.3)
-                Text(metaStats)
-                    .font(AppFont.sans(12, .medium))
-                    .foregroundStyle(AppColor.ink60)
-            }
+            Text(trail.name)
+                .font(AppFont.sans(28, .bold))
+                .foregroundStyle(AppColor.ink100)
+                .tracking(-0.6)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
 
-            Spacer(minLength: 0)
+            Text(metaStats)
+                .font(AppFont.sans(12.5, .medium))
+                .foregroundStyle(AppColor.ink60)
+                .tracking(0.2)
         }
     }
 
+    /// Three rounded lime rectangles in a triangle. Transcribed from
+    /// design/mockups.html `.rm-mark` SVG (viewBox 36×40):
+    ///   top:          x=14  y=1.5   w=8 h=14
+    ///   bottom-left:  x=2.5 y=22.5  w=8 h=14
+    ///   bottom-right: x=25.5 y=22.5 w=8 h=14
+    /// All with corner radius 1.5.
+    private var trailmark: some View {
+        ZStack {
+            // Top center
+            RoundedRectangle(cornerRadius: 1.5)
+                .frame(width: 8, height: 14)
+                .position(x: 18, y: 8.5)
+            // Bottom left
+            RoundedRectangle(cornerRadius: 1.5)
+                .frame(width: 8, height: 14)
+                .position(x: 6.5, y: 29.5)
+            // Bottom right
+            RoundedRectangle(cornerRadius: 1.5)
+                .frame(width: 8, height: 14)
+                .position(x: 29.5, y: 29.5)
+        }
+    }
+
+    /// "May 16 · 2.0 mi · 1 hr · 5 stops" — reads the walked date
+    /// from the router (stamped on `endTour()`). Falls back to today
+    /// if the user opened the journal without finishing a tour
+    /// (e.g. via the picker's Journal link).
     private var metaStats: String {
-        let f = DateFormatter()
-        f.dateFormat = "MMM d"
-        let dateStr = f.string(from: Date())
+        let dateStr = router.walkedDateLabel(trail) ?? todayLabel()
         let miles = trail.distanceMiles == floor(trail.distanceMiles)
             ? String(format: "%.0f", trail.distanceMiles)
             : String(format: "%.1f", trail.distanceMiles)
         return "\(dateStr) · \(miles) mi · \(formattedDuration) · \(trail.stops.count) stops"
+    }
+
+    private func todayLabel() -> String {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("MMM d")
+        return f.string(from: Date())
     }
 
     /// "30 min" / "1 hr" / "1 hr 12 min" — same friendly format used
@@ -122,47 +150,42 @@ struct JournalView: View {
         return r == 0 ? "\(h) hr" : "\(h) hr \(r) min"
     }
 
-    // MARK: - Discovery hero (big lime count)
+    // MARK: - Takeaways section header
 
-    private var discoveryHero: some View {
-        VStack(spacing: 10) {
-            Text("\(trail.learnings.count)")
-                .font(AppFont.sans(80, .bold))
-                .tracking(-3.0)
-                .foregroundStyle(AppColor.lime)
-                .shadow(color: AppColor.lime.opacity(0.20), radius: 26)
-                .monospacedDigit()
-            Text("Discoveries today")
-                .eyebrowStyle(AppColor.ink60)
-        }
-        .frame(maxWidth: .infinity)
+    /// Centered uppercase tracked "TAKEAWAYS" label, lime. Replaces
+    /// the earlier giant "5 · Discoveries today" hero count — quieter
+    /// section marker that doesn't compete with the trailmark above
+    /// or the card headlines below.
+    private var takeawaysEyebrow: some View {
+        Text("Takeaways")
+            .eyebrowStyle(AppColor.lime)
     }
 
     // MARK: - Discoveries stream (the learning cards)
 
     private var discoveriesStream: some View {
         VStack(spacing: 14) {
-            ForEach(Array(trail.learnings.enumerated()), id: \.element.id) { idx, learning in
-                learningCard(learning: learning, index: idx + 1)
+            ForEach(trail.learnings) { learning in
+                learningCard(learning)
             }
         }
     }
 
-    private func learningCard(learning: Learning, index: Int) -> some View {
+    private func learningCard(_ learning: Learning) -> some View {
         ZStack(alignment: .topTrailing) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text(learning.anchor)
-                    .font(AppFont.sans(28, .bold))
+                    .font(AppFont.sans(22, .bold))
                     .foregroundStyle(AppColor.ink100)
-                    .tracking(-0.7)
+                    .tracking(-0.4)
                     .lineSpacing(2)
-                    .padding(.trailing, 36)  // breathing room for corner number
+                    .padding(.trailing, 50)  // clearance for the 42px corner icon
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(learning.body)
-                    .font(AppFont.sans(14.5, .medium))
-                    .foregroundStyle(AppColor.ink100.opacity(0.95))
-                    .lineSpacing(4)
+                    .font(AppFont.sans(14, .medium))
+                    .foregroundStyle(AppColor.ink100.opacity(0.78))
+                    .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 22)
@@ -185,14 +208,34 @@ struct JournalView: View {
                     .stroke(AppColor.ink100.opacity(0.12), lineWidth: 1)
             )
 
-            // "01"–"05" corner number, lime, dim.
-            Text(String(format: "%02d", index))
-                .font(AppFont.sans(10.5, .heavy))
-                .tracking(1.8)
-                .foregroundStyle(AppColor.lime.opacity(0.55))
-                .monospacedDigit()
+            // Category icon, top-right. 42px, lime at 85 % with a soft
+            // halo so it reads against the lime-tinted card surface.
+            categoryIcon(learning.category)
+                .font(.system(size: 26, weight: .regular))
+                .foregroundStyle(AppColor.lime.opacity(0.85))
+                .frame(width: 42, height: 42)
+                .shadow(color: AppColor.lime.opacity(0.18), radius: 6)
                 .padding(.top, 14)
-                .padding(.trailing, 18)
+                .padding(.trailing, 14)
+        }
+    }
+
+    /// SF Symbol per learning category. Picked for "reads instantly"
+    /// rather than a 1:1 visual translation of the upstream hand-drawn
+    /// SVGs (`design/mockups.html` CATEGORY_ICONS) — SF Symbols give
+    /// us consistent iOS look, Dynamic Type, and tint handling.
+    @ViewBuilder
+    private func categoryIcon(_ cat: LearningCategory) -> some View {
+        switch cat {
+        case .geology:      Image(systemName: "square.stack.3d.up")
+        case .water:        Image(systemName: "drop")
+        case .plant:        Image(systemName: "leaf")
+        case .wildlife:     Image(systemName: "bird")
+        case .history:      Image(systemName: "doc.text")
+        case .architecture: Image(systemName: "building.columns")
+        case .sky:          Image(systemName: "sun.max")
+        case .chemistry:    Image(systemName: "atom")
+        case .other:        Image(systemName: "asterisk")
         }
     }
 
@@ -218,6 +261,7 @@ struct JournalView: View {
         .environmentObject({
             let r = AppRouter()
             r.currentTrail = TrailData.kildoo
+            r.walkedAt[TrailData.kildoo.id] = Date()
             return r
         }())
 }

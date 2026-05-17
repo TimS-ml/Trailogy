@@ -90,10 +90,16 @@ struct PickerView: View {
 // MARK: - TrailCard
 
 private struct TrailCard: View {
+    @EnvironmentObject var router: AppRouter
     let trail: Trail
     let onTap: () -> Void
 
-    var status: TrailStatus { TrailData.status(for: trail) }
+    /// Status is now derived from router runtime state (`walkedAt`)
+    /// rather than from a hardcoded table — see design/README.md
+    /// commit 8bf8889. Mirrors the mockup's `renderPickerBadges()`,
+    /// which injects the "Completed [date]" badge on every walked
+    /// trail at picker render time, with no demo-baked completions.
+    var status: TrailStatus { TrailData.status(for: trail, router: router) }
 
     var body: some View {
         Button(action: onTap) {

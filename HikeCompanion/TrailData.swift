@@ -27,6 +27,19 @@ private func c(_ lat: Double, _ lng: Double) -> CLLocationCoordinate2D {
 /// Curator-authored, static per trail — selective, not exhaustive
 /// (not every stop produces a learning, and one stop can produce
 /// more than one).
+/// Coarse classification of what a Learning is about — drives the
+/// category icon rendered next to each Recap card. Mirrors the
+/// CATEGORY_ICONS map in design/mockups.html. Nine categories cover
+/// ~95 % of nature-trail content; `other` is the fallback bucket.
+///
+/// Why coarse: the LLM's classification job for dynamic (user Q&A)
+/// takeaways added in a later iteration is "summarize and pick one
+/// of these nine" — well within reliable capability. Same shape works
+/// for curator-authored content (today) and dynamic content (later).
+enum LearningCategory: String, CaseIterable {
+    case geology, water, plant, wildlife, history, architecture, sky, chemistry, other
+}
+
 struct Learning: Identifiable {
     let id = UUID()
     /// Short heading — the hero number/date/quantity. Examples:
@@ -34,6 +47,9 @@ struct Learning: Identifiable {
     let anchor: String
     /// One-paragraph context that unpacks the anchor.
     let body: String
+    /// Which category icon goes next to this card in the Recap.
+    /// See `LearningCategory` and `JournalView.categoryIcon(_:)`.
+    let category: LearningCategory
 }
 
 struct TrailStop: Identifiable {
@@ -352,23 +368,28 @@ enum TrailData {
         learnings: [
             Learning(
                 anchor: "320 million years",
-                body: "Age of the sandstone in the layered cliffs. The orange streaks are iron oxide leached out of the rock by groundwater over geologic time."
+                body: "Age of the sandstone in the layered cliffs. The orange streaks are iron oxide leached out of the rock by groundwater over geologic time.",
+                category: .geology
             ),
             Learning(
                 anchor: "Iron oxide",
-                body: "What turns the cliff face orange — leached out of the sandstone by groundwater, stain by stain, over a very long time."
+                body: "What turns the cliff face orange — leached out of the sandstone by groundwater, stain by stain, over a very long time.",
+                category: .chemistry
             ),
             Learning(
                 anchor: "Three centuries",
-                body: "Age of the eastern hemlocks leaning over the gorge above Kildoo Falls — older than the country itself."
+                body: "Age of the eastern hemlocks leaning over the gorge above Kildoo Falls — older than the country itself.",
+                category: .plant
             ),
             Learning(
                 anchor: "1874",
-                body: "The Covered Bridge was built this year — Howe truss design, one of two left in Pennsylvania. The mill ground grain here until 1928."
+                body: "The Covered Bridge was built this year — Howe truss design, one of two left in Pennsylvania. The mill ground grain here until 1928.",
+                category: .architecture
             ),
             Learning(
                 anchor: "80 tons",
-                body: "Weight of Slippery Rock — the sandstone boulder in the creek that gave the waterway its name. Algae keeps it slick."
+                body: "Weight of Slippery Rock — the sandstone boulder in the creek that gave the waterway its name. Algae keeps it slick.",
+                category: .geology
             )
         ]
     )
@@ -573,23 +594,28 @@ enum TrailData {
         learnings: [
             Learning(
                 anchor: "Seven years",
-                body: "How long large-flowered trillium takes to bloom from seed. The white-petaled carpet under the wildflower meadow is the result of decades of slow accumulation."
+                body: "How long large-flowered trillium takes to bloom from seed. The white-petaled carpet under the wildflower meadow is the result of decades of slow accumulation.",
+                category: .plant
             ),
             Learning(
                 anchor: "1800s farms",
-                body: "The weathered fence posts in the understory mark the edges of farms that were here before the forest. The land reclaimed itself within a single human lifetime."
+                body: "The weathered fence posts in the understory mark the edges of farms that were here before the forest. The land reclaimed itself within a single human lifetime.",
+                category: .history
             ),
             Learning(
                 anchor: "Spring ephemerals",
-                body: "Trillium, Virginia bluebells, and Dutchman's breeches all bloom and seed in the brief window before the canopy closes. Most of the year they're invisible."
+                body: "Trillium, Virginia bluebells, and Dutchman's breeches all bloom and seed in the brief window before the canopy closes. Most of the year they're invisible.",
+                category: .plant
             ),
             Learning(
                 anchor: "Pileated woodpecker",
-                body: "The largest woodpecker in the eastern forest. The clean rectangular holes in dead snags here are its work — chiseled out chasing carpenter ants."
+                body: "The largest woodpecker in the eastern forest. The clean rectangular holes in dead snags here are its work — chiseled out chasing carpenter ants.",
+                category: .wildlife
             ),
             Learning(
                 anchor: "Raccoon Creek",
-                body: "The slope at the east overlook drops toward this creek — the watershed that defines the park, and a tributary of the Ohio River."
+                body: "The slope at the east overlook drops toward this creek — the watershed that defines the park, and a tributary of the Ohio River.",
+                category: .water
             )
         ]
     )
@@ -705,23 +731,28 @@ enum TrailData {
         learnings: [
             Learning(
                 anchor: "644 acres",
-                body: "Frick Park is Pittsburgh's largest historic park — built up from Helen Clay Frick's 1919 bequest and continuously expanded since."
+                body: "Frick Park is Pittsburgh's largest historic park — built up from Helen Clay Frick's 1919 bequest and continuously expanded since.",
+                category: .history
             ),
             Learning(
                 anchor: "150+ years",
-                body: "Some of the oaks and tulip poplars in Forest Grove pre-date the city's industrial era. They survived because this slope was too steep to log."
+                body: "Some of the oaks and tulip poplars in Forest Grove pre-date the city's industrial era. They survived because this slope was too steep to log.",
+                category: .plant
             ),
             Learning(
                 anchor: "Skunk cabbage",
-                body: "One of the first plants to bloom each spring — can melt its own snow with metabolic heat, sometimes visible against the late frost."
+                body: "One of the first plants to bloom each spring — can melt its own snow with metabolic heat, sometimes visible against the late frost.",
+                category: .plant
             ),
             Learning(
                 anchor: "Fern Hollow Creek",
-                body: "Drains into Nine Mile Run downstream. The whole watershed sat under industrial slag for most of the 20th century before the 2002 restoration."
+                body: "Drains into Nine Mile Run downstream. The whole watershed sat under industrial slag for most of the 20th century before the 2002 restoration.",
+                category: .water
             ),
             Learning(
                 anchor: "Pittsburgh Coal",
-                body: "The coal-bearing strata beneath the park formed about 300 million years ago, when this region was a coastal swamp near the equator."
+                body: "The coal-bearing strata beneath the park formed about 300 million years ago, when this region was a coastal swamp near the equator.",
+                category: .geology
             )
         ]
     )
@@ -729,15 +760,18 @@ enum TrailData {
     /// Order shown on the picker.
     static let all: [Trail] = [kildoo, oldField, tranquil]
 
-    static func status(for trail: Trail) -> TrailStatus {
-        switch trail.id {
-        // Old Field & Jennings shows as "Completed Apr 14" on the
-        // picker — matches the mockup's per-card status badge.
-        case "oldfield": return .walked(dateLabel: "Apr 14")
-        // Models are bundled at app install — every trail is "ready" from
-        // the user's perspective; the per-trail download flow in the
-        // mockup is decorative.
-        default:         return .ready
+    /// Per-trail status. Now driven entirely by AppRouter runtime
+    /// state (`walkedAt`, `downloadedTrailIDs`) — the earlier
+    /// hardcoded `"Apr 14"` for Old Field is gone (see design/README.md
+    /// commit 8bf8889: badges stamp on tour finish, no hardcoded state).
+    /// Kept as a helper here in case future code wants a single
+    /// place to ask "what state is this trail in?"; PickerView reads
+    /// the router directly today.
+    static func status(for trail: Trail, router: AppRouter) -> TrailStatus {
+        if let date = router.walkedDateLabel(trail) {
+            return .walked(dateLabel: date)
+        }
+        return .ready
         }
     }
 }

@@ -32,6 +32,19 @@ final class AppRouter: ObservableObject {
     /// (or build a proper DownloadService backed by URLSessionDownloadTask).
     @Published var downloadedTrailIDs: Set<String>
 
+    /// When each trail was last walked. Populated by `endTour()` on
+    /// tour completion (the moment WalkingView routes to JournalView).
+    /// PickerView reads this to render the "Completed [date]" badge on
+    /// a walked trail's card, and JournalView reads it for the recap
+    /// meta line ("Completed May 16" instead of always "today").
+    ///
+    /// Mirrors `t.walked + t.walkedDate` from design/mockups.html
+    /// (commit 8bf8889 — "Completed badge: stamp on tour finish, no
+    /// hardcoded state"). Like `downloadedTrailIDs`, this is in-memory
+    /// only and resets on app relaunch — the demo deliberately starts
+    /// fresh with no completion history.
+    @Published var walkedAt: [String: Date] = [:]
+
     init() {
         downloadedTrailIDs = Set(
             TrailData.all.filter(\.initiallyDownloaded).map(\.id)
@@ -44,6 +57,24 @@ final class AppRouter: ObservableObject {
 
     func markDownloaded(_ trail: Trail) {
         downloadedTrailIDs.insert(trail.id)
+    }
+
+    /// `true` if the user has completed at least one tour of this trail
+    /// in the current app session. Drives the picker's "Completed
+    /// [date]" badge — see PickerView.statusBadge.
+    func isWalked(_ trail: Trail) -> Bool {
+        walkedAt[trail.id] != nil
+    }
+
+    /// Localized short date for the picker badge / recap meta. e.g.
+    /// "May 16" — uses the user's locale via DateFormatter rather than
+    /// a hardcoded format so it reads naturally in non-English locales
+    /// too. Returns nil if the trail hasn't been walked.
+    func walkedDateLabel(_ trail: Trail) -> String? {
+        guard let date = walkedAt[trail.id] else { return nil }
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("MMM d")
+        return f.string(from: date)
     }
 
     func go(_ s: AppScreen) {
@@ -59,7 +90,17 @@ final class AppRouter: ObservableObject {
 
     func begin() { go(.walking) }
     func backToPicker() { go(.picker) }
-    func endTour() { go(.journal) }
+
+    /// Called when the user reaches the tour's terminal `complete`
+    /// phase (or taps End Tour from the More menu). Stamps the trail
+    /// as walked with today's date, then routes to the Recap. The
+    /// picker shows the resulting "Completed [date]" badge on next
+    /// visit. Mirrors `markTrailWalked()` in design/mockups.html.
+    func endTour() {
+        walkedAt[currentTrail.id] = Date()
+        go(.journal)
+    }
+
     func closeJournal() { go(.picker) }
 
     func openDebug()  { debugVisible = true  }
