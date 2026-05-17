@@ -126,12 +126,12 @@ struct DetailView: View {
             Color.clear.frame(width: 32, height: 32)
         }
         .padding(.horizontal, 18)
-        // 64 pt literal from screen top (the VStack ignores top
-        // safe area now). The dynamic island ends ~59 pt down on
-        // iPhone 15 Pro, so 64 pt clears it by 5 pt — minimum
-        // breathing room. Was 44 pt past safe-area inset (=103 pt
-        // total); now 64 pt total → 39 pt reclaimed.
-        .padding(.top, 64)
+        // 72 pt literal from screen top — matches the mockup's
+        // `.dm-top { padding: 72px ... }` exactly. The dynamic
+        // island ends ~59 pt down on iPhone 15 Pro, so 72 pt
+        // clears it by 13 pt — comfortable margin (64 felt tight
+        // at only 5 pt clearance).
+        .padding(.top, 72)
         .padding(.bottom, 14)
         .overlay(alignment: .bottom) {
             // Hairline divider into the map — mirrors the .dm-top
