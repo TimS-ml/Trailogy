@@ -89,6 +89,22 @@ final class GemmaService: ObservableObject {
     /// 2 once we've validated the basic image path is stable.)
     private let maxImageHistoryMessages = 0
 
+    /// Training-time data prefix gate. The internal SFT runs prepend a
+    /// literal `[camera=on] ` to the first user turn of every record
+    /// that carries an image, and `[camera=off] ` to every text-only
+    /// record. At deploy time the iOS app must emit the same marker so
+    /// the model sees the same gate it was trained on — otherwise it
+    /// drifts toward base-like behaviour and eval scores look low.
+    ///
+    /// `[camera=on]` is always emitted on image asks: the SFT
+    /// checkpoint we ship expects it. `[camera=off]` is opt-in via a
+    /// static flag, default OFF, because the base / camera-on-only
+    /// checkpoint variants would just see ~6 noise tokens per text
+    /// prompt. Flip `emitCameraOffTag` to `true` once a checkpoint
+    /// trained with the camera_off branch active is bundled.
+    private static let emitCameraOnTag  = true
+    private static let emitCameraOffTag = false
+
     /// Always-on persona + identification instructions. Folded into a
     /// single block (was previously two — base + image-specific) so we
     /// don't pay the dedicated image-guidance tokens on every VLM turn.
@@ -323,11 +339,25 @@ final class GemmaService: ObservableObject {
         // factual context), then the user's actual question. Saved
         // history keeps just `prompt` (without either framing) — see
         // persist block below.
+        //
+        // The training-time data-prefix gate (`[camera=on] ` /
+        // `[camera=off] `) is placed at the very start of the user
+        // content, BEFORE the stop / RAG blocks, so it lands in the
+        // same position the SFT model saw at train time — literally
+        // the first tokens of the user turn after the chat-template
+        // role marker. Empty tag = no-op (no leading space).
+        let cameraTag: String
+        if imageInputs.isEmpty {
+            cameraTag = Self.emitCameraOffTag ? "[camera=off] " : ""
+        } else {
+            cameraTag = Self.emitCameraOnTag ? "[camera=on] " : ""
+        }
+
         var promptParts: [String] = []
         if !stopContextBlock.isEmpty { promptParts.append(stopContextBlock) }
         if !ragContext.isEmpty       { promptParts.append(ragContext) }
         promptParts.append(prompt)
-        let composedPrompt = promptParts.joined(separator: "\n\n")
+        let composedPrompt = cameraTag + promptParts.joined(separator: "\n\n")
         print("[Gemma] streamResponse composed prompt: \(composedPrompt.count) chars · stopFraming=\(!stopContextBlock.isEmpty) ragContext=\(!ragContext.isEmpty) imageTokens=\(!imageInputs.isEmpty)")
 
         // One-shot: clear ragContext so a follow-up turn without a
