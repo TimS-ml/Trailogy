@@ -12,9 +12,9 @@ The retrieval embedder stays loaded across language-model unloads because it is 
 
 Tiny resident embedder + flat vector search, with two upgrades over the naive “download MiniLM on first launch” approach:
 
-Bundled on-device embedder
+1. Bundled on-device embedder
 The embedder is packaged with the app, about 87 MB, instead of being pulled from Hugging Face at runtime. This keeps the experience offline-ready and avoids first-launch dependency issues.
-Trail-specific subject activation
+2. Trail-specific subject activation
 Instead of hardcoding retrieval to a single subject like setActiveSubject(.geology), each trail defines its own active subject areas. For example, one trail may activate geology and forest ecology, while another may activate wetlands, plants, and local history. DebugView can override the active set at runtime, which made testing and tuning easier.
 ## Components
 
