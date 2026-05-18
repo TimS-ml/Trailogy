@@ -1,0 +1,46 @@
+# NVIDIA GPU training stack.
+# Mirrors the install block in unsloth's gemma4-e4b-unsloth.py reference.
+#
+# Run on the training box:
+#     pip install -r requirements.txt
+#
+# Mac dev (dry-run + tests only) needs just the bottom block; the unsloth
+# / bitsandbytes wheels won't install on macOS but pytest doesn't import
+# them on the dry-run path.
+
+# --- Core (NVIDIA only) ---
+torch>=2.8.0
+triton>=3.4.0
+torchvision
+torchcodec
+bitsandbytes
+unsloth
+unsloth_zoo>=2026.4.5
+transformers==5.5.0
+trl
+
+# --- Common (works on Mac for tests / dry-run) ---
+numpy
+pillow
+datasets>=3.0.0
+safetensors>=0.4.0
+pyyaml>=6.0
+tqdm>=4.66.0
+timm
+
+# --- MLX export (Apple Silicon Mac only) ---
+# mlx-vlm is REQUIRED for converting Gemma 4 (a multimodal model) to MLX.
+# DO NOT substitute mlx-lm — that one is language-only and silently drops
+# the vision tower weights, producing a checkpoint that the iOS app cannot
+# serve. Pip-install fails on non-Apple-Silicon hosts; that is expected.
+mlx-vlm; platform_system == "Darwin" and platform_machine == "arm64"
+
+# --- Eval / logging (optional) ---
+rouge-score>=0.1.2
+wandb>=0.19.0
+
+# --- LLM-as-judge (src/judge.py) ---
+qwen-vl-utils>=0.0.8
+
+# --- Test ---
+pytest>=7.0

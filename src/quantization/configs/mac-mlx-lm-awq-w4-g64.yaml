@@ -1,0 +1,30 @@
+# [RUNTIME] Mac (Apple Silicon, M-series) — mlx-lm native quant.
+#
+# Method: AWQ.
+# Wraps mlx_lm.quant.awq.main.
+#
+# KNOWN ISSUE: AWQ_MODEL_CONFIGS in mlx-lm 0.31.3 covers gemma3/gemma3_text
+# but NOT gemma4. This run is expected to fail at upstream's
+# `NotImplementedError(f"AWQ support for {model_type} models NYI.")`
+# — recorded as a method-support data point.
+
+method: awq
+
+quant:
+  bits: 4
+  group_size: 64
+  embed_bits: 4
+  embed_group_size: 32
+  num_samples: 128
+  sequence_length: 512
+  n_grid: 20
+  seed: 0
+
+smoke:
+  max_tokens: 128
+
+ppl:
+  batch_size: 4
+  sequence_length: 512
+  max_batches: 200
+  checkpoint_every: 32

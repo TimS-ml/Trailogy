@@ -1,0 +1,25 @@
+{
+  "variant": "M0_bf16_test300",
+  "model_path": "quantization/results/_merged_bf16",
+  "backend": "mlx_vlm",
+  "device": "Device(gpu, 0)",
+  "eval_seed": 0,
+  "benchmarks": {
+    "plantnet_val": {
+      "n": 300,
+      "species_match": 0.8566666666666667,
+      "rouge_l_mean": 0.8314153927029516,
+      "rouge_l_median": 0.9019607843137256,
+      "species_matches": 257,
+      "avg_response_len": 171.25333333333333,
+      "elapsed_s": 298.36924516700674,
+      "wall_time_s": 298.5
+    }
+  },
+  "generation_kwargs": {
+    "do_sample": false,
+    "max_new_tokens": "per-benchmark"
+  },
+  "model_size_gb": 9.573,
+  "loader": "mlx_vlm"
+}

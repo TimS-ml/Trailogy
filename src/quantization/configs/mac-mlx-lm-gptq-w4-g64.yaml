@@ -1,0 +1,32 @@
+# [RUNTIME] Mac (Apple Silicon, M-series) — mlx-lm native quant.
+#
+# Method: GPTQ (forward-only OBS-style PTQ).
+# Wraps mlx_lm.quant.gptq.main.  LM-only output.
+# Calibration: each method's built-in default (wikitext-2 via
+# mlx_lm.quant.utils.load_data).
+
+method: gptq
+
+quant:
+  bits: 4
+  group_size: 64
+  # IMPORTANT: keep fallback_bits=6 (Apple's default). Setting fallback_bits=4
+  # broke generation in the first run: layers OUTSIDE the GPTQ scope (notably
+  # embed_tokens + embed_tokens_per_layer) got naive 4-bit quantization with
+  # no calibration, which caused the model to emit <pad> for every token.
+  # dynamic_quant with low=3/high=4 worked because its sensitivity-aware
+  # threshold protected the embedding from naive quant.
+  fallback_bits: 6
+  fallback_group_size: 64
+  num_samples: 256          # GPTQ stable with 128-256 samples
+  sequence_length: 2048
+  seed: 0
+
+smoke:
+  max_tokens: 128
+
+ppl:
+  batch_size: 4
+  sequence_length: 512
+  max_batches: 200
+  checkpoint_every: 32

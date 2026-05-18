@@ -1,0 +1,19 @@
+# Baseline MLX VLM quantization: 4-bit, group-size 64.
+#
+# Should reproduce `mlx-community/gemma-4-e2b-it-4bit` (3.58 GB) when
+# applied to the base bf16 model. Apply to the SFT'd merged model for
+# the production deliverable.
+#
+# Hardware: Apple Silicon Mac with `mlx` and `mlx_vlm` installed
+# (or Linux + NVIDIA with mlx-cuda-12).
+#
+# Loaded by ``run_quant.py --config <this file>``. Note: ``q_group_size``
+# is pinned by the method name (mlx_vlm_g64); the YAML value is recorded
+# for documentation but cannot override the method-name selection.
+
+method: mlx_vlm_g64
+
+mlx_vlm:
+  quantize: true
+  q_bits: 4
+  q_group_size: 64  # pinned by method name; YAML override is rejected

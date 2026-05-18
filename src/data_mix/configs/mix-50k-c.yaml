@@ -1,0 +1,47 @@
+# data_mix/configs/mix-50k-c.yaml
+#
+# Variant of mix-50k-b.yaml: plant bumped to 45 %, smoltalk halved,
+# remaining deficit spread evenly across llava/smoltalk/negative.
+# Image-only camera prefix (no camera_off tag on text data).
+#
+#   bucket    mix-50k    mix-50k-b    mix-50k-c    delta (b->c)
+#   -----------------------------------------------------------
+#   plant       45 %       40 %         50 %       +10 pp (20 000 -> 22 500)
+#   llava       30 %       30 %         31 %       -1.9 pp (15 000 -> 14 150)
+#   smoltalk    15 %       20 %          9 %       -13 pp (10 000 ->  4 150)
+#   negative    10 %       10 %          9 %       -0.7 pp ( 5 000 ->  4 200)
+#   offline_qa  out-of-ratio (~42 rows, unchanged)
+#
+# Total: ~45 038 rows. The "50k" family label is a round-number tag.
+#
+# Paired training config:
+#   configs/local_sweep/r8-a16-drop005-mix50kc.yaml
+# which sets prompt_prefixes.camera_on only (no camera_off key).
+#
+# val_* files are SHARED with mix-50k for cross-run eval_loss
+# comparability (same val, different train).
+
+seed: 42
+source: llava
+
+plant:
+  train: 22000
+  val:   1100
+  per_class_cap: 50
+
+llava:
+  train: 14300
+  val:   750
+
+smoltalk:
+  train: 4350
+  val:   250
+
+negative:
+  train: 4350
+  val:   250
+
+# v3: tiny persona bucket, same path/val_ratio as mix-50k.
+offline_qa:
+  path: "assets/data_offline_qa/offline_qa.json"
+  val_ratio: 0.1

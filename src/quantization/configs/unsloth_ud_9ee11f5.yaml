@@ -1,0 +1,28 @@
+# Unsloth UD (Unsloth Dynamic) MLX 4-bit — replicate the recipe at
+# commit 9ee11f5 of `unsloth/gemma-4-E2B-it-UD-MLX-4bit` (3.55 GB).
+#
+# STATUS: ``methods/unsloth_ud.py`` is a STUB — see its module docstring
+# for the investigation plan. This config is the placeholder spec that
+# will drive the implementation once the promotion-key diff has been
+# extracted from the public HF releases.
+#
+# Loaded by ``run_quant.py --config <this file>``; will raise
+# NotImplementedError until the stub is filled in.
+
+method: unsloth_ud
+
+unsloth_ud:
+  q_bits: 4
+  q_group_size: 64
+  promoted_dtype: float16
+
+  # Tensor key substrings that should be kept at higher precision
+  # instead of being quantized to 4-bit. POPULATE FROM HF DIFF by
+  # running ``scripts/diff_unsloth_ud.py`` against the public HF
+  # release at commit 9ee11f5.
+  promotion_keys: []
+  # Likely candidates (from public UD philosophy across other models):
+  #   - "lm_head"
+  #   - "embed_tokens"  -- but Gemma 4 ties these, may not appear
+  #   - "language_model.norm"
+  #   - certain attention layers (e.g. layers 0, 1, last 2)

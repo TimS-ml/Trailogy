@@ -1,0 +1,45 @@
+# data_mix/configs/mix-100k.yaml
+#
+# v2 production config: 100K-row anti-overtraining mix.
+#
+# Bucket ratios (same as mix-20k): Plant 45 / LLaVA 30 / smoltalk 15 /
+# Negative 10.
+#
+# Plant balancing: per_class_cap=146 = max class size in PlantNet
+# enriched train (45K rows / 782 species). At this cap, the plant
+# bucket consumes all PlantNet train rows — 100K-mix cannot be made
+# "more balanced" without dropping plant rows (the 50K mix uses cap=50
+# for a real balancing effect).
+#
+# Source: LLaVA-instruct-mix-vsft (HuggingFaceH4/llava-instruct-mix-vsft,
+# 273K rows). Non-plant filter is OFF — incidental plant images survive
+# into the general pool, the negative bucket's refusal template handles
+# any false-context-collapse risk.
+seed: 42
+source: llava
+
+plant:
+  train: 45000
+  val:   2250
+  per_class_cap: 146   # = max class size in PlantNet train; effectively no-op cap
+
+llava:
+  train: 30000
+  val:   1500
+
+smoltalk:
+  train: 15000
+  val:   750
+
+negative:
+  train: 10000
+  val:   500
+
+# v3: tiny persona bucket. Sits OUTSIDE the 45/30/15/10 ratio (so the
+# mix becomes 100,038 instead of exactly 100,000 — 0.04 % drift). Whole
+# corpus included once; no oversample. The path is resolved relative
+# to the repo root at mix-build time. At val_ratio=0.1 we get 4 val
+# records out of the 42-entry corpus.
+offline_qa:
+  path: "assets/data_offline_qa/offline_qa.json"
+  val_ratio: 0.1

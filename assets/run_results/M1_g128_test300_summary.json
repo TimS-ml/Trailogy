@@ -1,0 +1,25 @@
+{
+  "variant": "M1_g128_test300",
+  "model_path": "quantization/results/mlx_vlm_g128_sft_aug_enwiki",
+  "backend": "mlx_vlm",
+  "device": "Device(gpu, 0)",
+  "eval_seed": 0,
+  "benchmarks": {
+    "plantnet_val": {
+      "n": 300,
+      "species_match": 0.7833333333333333,
+      "rouge_l_mean": 0.7609730115898656,
+      "rouge_l_median": 0.8717948717948718,
+      "species_matches": 235,
+      "avg_response_len": 177.23666666666668,
+      "elapsed_s": 147.2348813340068,
+      "wall_time_s": 147.3
+    }
+  },
+  "generation_kwargs": {
+    "do_sample": false,
+    "max_new_tokens": "per-benchmark"
+  },
+  "model_size_gb": 3.235,
+  "loader": "mlx_vlm"
+}

@@ -1,0 +1,35 @@
+# [RUNTIME] Mac (Apple Silicon, M-series) — mlx-lm native quant.
+#
+# Method: DWQ — distillation-based weight quantization.
+# Wraps mlx_lm.quant.dwq.main.  Runs a training loop minimizing
+# KL(teacher_bf16 || student_quantized).  Longest of the 4 methods.
+#
+# Defaults trimmed for 32 GB Apple Silicon:
+#   - batch_size 2 (upstream default 4 is risky at 1k seq length)
+#   - num_samples 1024 (upstream default 2048 — half for first pass)
+#   - grad_checkpoint: true
+#
+# Teacher logits cache lives in <output_dir>/dwq_targets/ so resume
+# after crash doesn't have to recompute the teacher pass.
+
+method: dwq
+
+quant:
+  bits: 4
+  group_size: 64
+  num_samples: 1024
+  max_seq_length: 1025
+  learning_rate: 1.0e-6
+  batch_size: 2
+  data_path: "allenai/tulu-3-sft-mixture"
+  grad_checkpoint: true
+  seed: 0
+
+smoke:
+  max_tokens: 128
+
+ppl:
+  batch_size: 4
+  sequence_length: 512
+  max_batches: 200
+  checkpoint_every: 32

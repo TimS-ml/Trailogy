@@ -1,0 +1,82 @@
+# Training config: r=8, alpha=8, projector tuned, vision frozen, no KL.
+# Sized for a 16 GB-class GPU with effective batch size 16.
+
+model:
+  base_model: "unsloth/gemma-4-E2B-it"
+  max_seq_length: 1024
+  load_in_4bit: false
+  full_finetuning: false
+  dtype: bfloat16
+
+lora:
+  finetune_vision_layers: false
+  finetune_audio_layers: false
+  finetune_language_layers: true
+  finetune_attention_modules: true
+  finetune_mlp_modules: true
+  r: 8
+  lora_alpha: 8                  # alpha/r = 1.0
+  lora_dropout: 0.05
+  bias: "none"
+  random_state: 3407
+  tune_projector: true
+  projector_learning_rate: 1.4e-4
+  tune_last_n_vision_layers: 0
+  vision_layers_learning_rate: 1.0e-5
+
+training:
+  output_dir: "outputs/local-r8-a8-nokl-laptop"
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16  # eff_bs = 16
+  num_train_epochs: 5
+  max_steps: 1000
+  learning_rate: 3.0e-4
+  warmup_ratio: 0.03
+  warmup_steps: 30
+  logging_steps: 10
+  optim: "adamw_torch_fused"
+  weight_decay: 0.001
+  lr_scheduler_type: "cosine"
+  seed: 3407
+  report_to: "wandb"
+  save_steps: 1000
+  save_total_limit: null
+  dataloader_num_workers: 4
+  dataloader_pin_memory: true
+  tf32: true
+
+  eval_strategy: "steps"
+  eval_steps: 1000
+  per_device_eval_batch_size: 2
+
+  modality_aware_sampler: true
+  group_by_length: false
+
+data:
+  train_file: "data/mix-50k-c/train.jsonl"
+  val_file: null
+  val_files:
+    plant:      "data/mix-50k/val_plant.jsonl"
+    nonplant:   "data/mix-50k/val_nonplant.jsonl"
+    negative:   "data/mix-50k/val_negative.jsonl"
+    offline_qa: "data/mix-50k/val_offline_qa.jsonl"
+  max_train_samples: null
+  max_val_samples: null
+  augmentation: true
+  prompt_prefixes:
+    camera_on: "[camera=on] "
+
+eval:
+  enabled: true
+  max_eval_samples: 300
+  max_new_tokens: 256
+  use_unsloth: true
+  batch_size: 1
+  load_in_4bit: false
+
+regularization:
+  kl_enabled: false
+  kl_weight: 0.0
+  kl_temperature: 1.0
+  l2_enabled: false
+  l2_weight: 1.0e-4

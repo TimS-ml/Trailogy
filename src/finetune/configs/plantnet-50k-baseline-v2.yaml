@@ -1,0 +1,266 @@
+# PLANTNET 50K BASELINE V2 — small-r regularized SFT (16G VRAM experiment).
+#
+# Purpose
+# -------
+# Test on a 16 GB laptop whether a small-rank LoRA (r=64) + projector +
+# full v3 anti-forgetting regularization stack can train PlantNet
+# species-ID WITHOUT the overtraining seen on r=256 pure-plant runs.
+#
+# Hypothesis: the r=256 runs collapsed onto plant outputs even on
+# off-domain prompts because the adapter had enough capacity to
+# memorize plant features and the optimizer pushed it hard for 5
+# epochs. r=64 caps the adapter capacity (~30 M trainable LoRA params
+# vs ~120 M at r=256), and the KL+L2+dropout regularizers bound the
+# *direction* and *magnitude* of drift. The camera-state prefix bounds
+# the *input gate* (only prompts carrying ``[camera=on]`` /
+# ``[camera=off]`` activate the fine-tuned behaviour at deploy time).
+#
+# This is the smallest version of the v3 stack we can test on a 16 GB
+# box. Once we see whether the four regularizers prevent collapse on
+# r=64, the same stack can be promoted to r=256 on a 24 GB box for
+# full performance.
+#
+# Inherits from the older `plantnet-50k-baseline-lora-r64+fullproj-lr5e5`
+# config (single-source english-desc data, projector tuned, batch 16
+# effective, 5 epochs, augmentation on, cosine LR with 3% warmup).
+#
+# What's new vs that older config (the four added knobs):
+#   1. lora_dropout 0.0 → 0.05  (Stage-1 baseline4 winner)
+#   2. prompt_prefixes: {camera_on, camera_off}  (v4 camera-state gate;
+#      pure-plant data has every record image-bearing → every record
+#      sees [camera=on] at training time; the camera_off branch is
+#      declared so the iOS app's text-only Asks at deploy time also
+#      land on a known marker the model saw during regularization)
+#   3. regularization.kl_enabled + kl_weight 0.05  (v3 anti-forgetting)
+#   4. regularization.l2_enabled + l2_weight 1e-4   (v3 EWC-light)
+#
+# Plus the 16 GB-fit batch geometry:
+#   - per_device_train_batch_size 16 → 4
+#   - gradient_accumulation_steps  1 → 4
+#   - effective batch unchanged (4 × 4 = 16) so LR/warmup math stays
+#     valid; quartering the per-device peak fits the 16 GB ceiling.
+#     Initial attempt at batch 8 + grad_accum 2 OOM'd at step 0 in
+#     Gemma4VisionPatchEmbedder._position_embeddings — the vision tower
+#     at 960×672 (2520 patches/image) is the memory bottleneck on this
+#     box, not the language LoRA. The KL teacher forward (no_grad pass
+#     through the same model under PEFT disable_adapter()) doubles the
+#     vision-tower activation pressure, pushing batch 8 over the 16 GB
+#     line even with gradient checkpointing on.
+#
+# Step / wall-time math (post-canonical-data fix, 2026-05-15):
+#   train.jsonl: 45,000 records   (was 27,813 in the stale docs)
+#   val.jsonl:    5,000 records
+#   45,000 / batch 16 (effective) = 2,813 steps/epoch
+#   5 epochs                      = ~14,063 total steps
+#   warmup_ratio 0.03             = ~422 warmup steps (overrides
+#                                    warmup_steps below)
+#   save_steps 1000               = ~14 checkpoints, ~60 MB each
+#                                    (r=64 + projector, no vision
+#                                    layers) → ~840 MB ckpt disk total
+#   Mid-training eval (max_val_samples=500, eval every 1000 steps):
+#     500 records / per_device_eval_batch_size 4 = 125 batches
+#     × ~0.3 s/batch × 14 evals  ≈ ~9 min total eval overhead.
+#     (Capped from full 5000 so the eval loop doesn't dominate the
+#     wall time of an 8-10 h training run.)
+#   Expected wall time on a 16 GB 4090 laptop: 8–10 h (KL teacher
+#   forward adds ~30–40 % per step per the design doc).
+#
+# Output:
+#   outputs/plantnet-50k-baseline-v2-r64+fullproj+dropout+kl+l2/
+#       checkpoint-1000/  ... checkpoint-8000/  final-adapter/
+#
+# Pre-flight:
+#   1. Dry-run (no GPU, validates data + config wiring):
+#        python -m src.finetune --config configs/plantnet-50k-baseline-v2.yaml --dry-run
+#      Confirm log line:
+#        - "Camera-state prompt prefixes: {'camera_on': \"'[camera=on] '\", 'camera_off': \"'[camera=off] '\"} ..."
+#   2. Save-reload smoke (catches PEFT orphan-tensor bugs at r=64+proj):
+#        python scripts/inspect/save_reload.py
+#   3. Real training:
+#        nohup python -m src.finetune \
+#          --config configs/plantnet-50k-baseline-v2.yaml \
+#          > outputs/plantnet-50k-baseline-v2-r64+fullproj+dropout+kl+l2/train.log 2>&1 &
+
+model:
+  base_model: "unsloth/gemma-4-E2B-it"
+  max_seq_length: 1024
+  # Project policy: NO 4-bit / 8-bit anywhere unless this is an
+  # explicit QLoRA-baseline run. This is not one.
+  load_in_4bit: false
+  full_finetuning: false
+  dtype: bfloat16
+
+lora:
+  finetune_vision_layers: false
+  finetune_audio_layers: false
+  finetune_language_layers: true
+  finetune_attention_modules: true
+  finetune_mlp_modules: true
+  # Small rank: ~30 M trainable LoRA params (vs ~120 M at r=256). The
+  # whole point of this run is to test whether the regularization stack
+  # can prevent overtraining at a capacity floor where the adapter
+  # *should* fit plant data cleanly without leftover capacity for
+  # off-domain memorization.
+  r: 64
+  # alpha/r = 1.0 so the adapter contributes at full magnitude (the
+  # r64-a8 variant we tried earlier multiplied LoRA by 0.125 and gave
+  # under-trained behaviour even at 5 epochs).
+  lora_alpha: 64
+  # v3 knob (was 0.0). Regularizes the LoRA path. Stage-1 baseline4
+  # showed +12.7 pp species_match on n=300 val from this single change.
+  lora_dropout: 0.05
+  bias: "none"
+  random_state: 3407
+  # Full-param projector tuning (Gemma4MultimodalEmbedder, ~1.18 M
+  # params). Vision ENCODER (vision_tower.{patch_embedder, encoder,
+  # pooler}) stays frozen. modules_to_save mechanism — must stay in
+  # bf16, not 4-bit (validator + finetune.py tripwire enforce this).
+  tune_projector: true
+  # LR/4. Slightly more aggressive than the auto default (LR/10) — the
+  # projector is small and benefits from faster adaptation. Matches the
+  # r256 fullproj config.
+  projector_learning_rate: 5.0e-5
+  # NOT tuning vision encoder layers in this experiment — keeps the
+  # 16 GB budget tractable and isolates the regularization-stack effect.
+  # tune_last_n_vision_layers: 0 (default)
+
+training:
+  output_dir: "outputs/plantnet-50k-baseline-v2-r64+fullproj+dropout+kl+l2"
+  # 16 GB fit: batch 4 × grad_accum 4 = effective batch 16. Initial
+  # attempt at batch 8 OOM'd at step 0 inside Gemma4VisionPatchEmbedder
+  # _position_embeddings — the vision-tower 2520-patch forward at
+  # batch 8 (= 20,160 vision tokens) plus the KL teacher forward
+  # exceeded 15.5 GiB. Quartering the per-device batch gives ~4-5 GiB
+  # headroom. Effective batch unchanged so LR / warmup / total_steps
+  # math is identical to the original v3 mix design. Wall-time penalty
+  # vs batch 8: roughly +20-30 % per epoch from extra microsteps.
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4
+  num_train_epochs: 5
+  max_steps: null
+  learning_rate: 2.0e-4
+  # 3% warmup overrides warmup_steps via finetune.py:_resolve_warmup_steps.
+  # warmup_steps below is the informational fallback only.
+  warmup_ratio: 0.03
+  warmup_steps: 422           # ~0.03 * 14,063 effective steps
+  logging_steps: 10
+  optim: "adamw_torch_fused"
+  weight_decay: 0.001
+  lr_scheduler_type: "cosine"
+  seed: 3407
+  # Every 1000 effective steps → ~8 ckpts across the 5-epoch run.
+  save_steps: 1000
+  # Keep ALL intermediate ckpts (per user request and the v3 mix
+  # config's precedent). r=64 ckpts are tiny (~60 MB each: LoRA delta
+  # + projector full params), so 8 ckpts ≈ 480 MB on disk — negligible
+  # vs the value of being able to pick the best by mid-training eval
+  # after the fact.
+  save_total_limit: null
+  report_to: "none"
+  dataloader_num_workers: 8
+  dataloader_pin_memory: true
+  # 4090 free perf: TF32 for FP32 optimizer math (bf16 unaffected).
+  tf32: true
+  # Architectural constraint: the v3 regularization compute_loss
+  # override (KL + L2) lives on ModalityAwareSFTTrainer, so any config
+  # that enables regularization MUST also enable modality_aware_sampler
+  # (validator enforces this at finetune.py:1656-1665). On single-source
+  # data (all records have images) the sampler is effectively a no-op on
+  # the batching side — it just gives us the trainer subclass that owns
+  # the regularization hook.
+  modality_aware_sampler: true
+  # group_by_length MUST be false when modality_aware_sampler=true.
+  # The modality-aware sampler does its own within-modality length
+  # sort; double-sorting via HF's group_by_length is rejected by the
+  # validator (see config.py:539-542). Padding-efficiency is preserved
+  # by the sampler's own sort.
+  group_by_length: false
+  # Mid-training eval: every 1000 steps on the val split. Same cadence
+  # as save_steps so eval log + ckpt selection align.
+  eval_strategy: "steps"
+  eval_steps: 1000
+  per_device_eval_batch_size: 4
+
+data:
+  # English common name + Wikipedia description JSONL.
+  # Generated by:
+  #   bash scripts/run/prepare_plantnet_50k.sh
+  # Canonical post the 2026-05-15 train/eval mismatch fix
+  # (~27,813 train / ~3,090 val / ~29,880 test records, 782 species).
+  train_file: "data/english-desc/train.jsonl"
+  val_file:   "data/english-desc/val.jsonl"
+  max_train_samples: null
+  # Cap mid-training eval to 500 records (out of 5,000) so the eval
+  # loop doesn't dominate wall time. At per_device_eval_batch_size=4
+  # and eval_steps=1000 across ~14,063 total steps, 500 records ×
+  # 14 evals ≈ 9 min total eval overhead. The post-training auto-eval
+  # uses eval.max_eval_samples=300 separately (this knob controls
+  # mid-training eval only).
+  max_val_samples: 500
+  # Online image augmentation — applied to TRAIN ONLY (val/eval is
+  # never augmented so metric numbers stay comparable across runs).
+  # Default pipeline in src/augment.py::build_default_augment_transform:
+  #   - RandomHorizontalFlip(p=0.5)
+  #   - RandomRotation(degrees=15, fill=0)
+  #   - ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05)
+  #   - RandomPerspective(distortion_scale=0.1, p=0.3)
+  # All transforms preserve the 960x672 trained shape (no crop/resize).
+  augmentation: true
+  # v4: camera-state conditional-FT input gate. Every training record
+  # gets a literal marker prepended to its first user turn, dispatched
+  # on image presence:
+  #   record has image     → "[camera=on] " + user text
+  #   record has no image  → "[camera=off] " + user text
+  #
+  # On pure-plant data (this config), every training record carries
+  # an image, so every record sees [camera=on] in training. The
+  # camera_off entry is declared anyway so the iOS app's text-only
+  # Asks at deploy time land on a marker the model saw during the
+  # KL-anchored regularization passes (rather than a completely
+  # out-of-distribution string).
+  #
+  # iOS GemmaService MUST prepend the matching marker on every Ask:
+  #   .vlm  (image captured)  → "[camera=on] "  + user prompt
+  #   .text (no image)        → "[camera=off] " + user prompt
+  # otherwise the deployed model misses the gate and behaves like
+  # base.
+  prompt_prefixes:
+    camera_on:  "[camera=on] "
+    camera_off: "[camera=off] "
+
+# v3 anti-forgetting regularization (KL + L2). See
+# docs/finetune/07-anti-forgetting-regularization.md for full design +
+# rationale.
+#
+# KL: teacher = same model under PEFT disable_adapter() (zero extra
+# GPU mem). kl_weight=0.05 is conservative — at typical CE losses in
+# the 1-2 range, the KL term contributes 5-10 % of total loss after a
+# few hundred steps of drift. Mirrors the policy-vs-reference KL used
+# in RLHF / DPO, applied here at SFT time.
+#
+# L2: anchors every trainable param (LoRA delta + modules_to_save) to
+# its value at trainer init. l2_weight=1e-4 keeps the term well below
+# CE in the early phase; it grows as the optimizer pushes params
+# further from init. For modules_to_save (projector only here) the
+# snapshot value is the pretrained weight, which makes the L2 a
+# "weight-space anchor against drift" in the EWC sense.
+regularization:
+  kl_enabled: true
+  kl_weight: 0.05
+  kl_temperature: 1.0
+  l2_enabled: true
+  l2_weight: 1.0e-4
+
+eval:
+  # evaluate.py reads data.val_file above — automatically scores on the
+  # English-named val set. extract_species regex in src/evaluate.py
+  # handles both Title Case English names and Latin binomials.
+  # NOTE: post-training eval uses cfg.data.prompt_prefixes automatically
+  # so eval prompts get "[camera=on] " / "[camera=off] " too — matching
+  # training-time distribution. (evaluate.py CLI auto-read)
+  enabled: true
+  max_eval_samples: 300
+  max_new_tokens: 64
+  use_unsloth: true
+  batch_size: 1
+  load_in_4bit: false

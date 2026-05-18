@@ -1,0 +1,48 @@
+# GPTQ — calibration-based PTQ, 4-bit, group-size 128.
+#
+# Hardware: NVIDIA CUDA (4090 sufficient). Calibration data is a mix of
+# PlantNet train.jsonl + general text (WikiText-103).
+#
+# Output format: HF-compatible (gptqmodel/auto-gptq native). NOT
+# directly loadable by MLX. Used for eval-cost analysis; NOT for the
+# iOS deliverable bundle until the B.1 bridge lands. See
+# ``00-quantization-roadmap.md`` §B.1.3.
+#
+# Loaded by ``run_quant.py --config <this file>``. Per-method fields
+# live under their own section (``gptq:``). Unknown keys are silently
+# dropped, so adding forward-compat fields here is safe.
+
+method: gptq
+
+gptq:
+  bits: 4
+  group_size: 128
+  desc_act: false
+  sym: true
+  true_sequential: true
+  lm_head: false
+
+  # Hessian dampening for the OBS inverse. 0.01 is more conservative
+  # than gptqmodel's 0.05 default — recommended for Gemma 4 E2B's
+  # KV-shared layers (15-34) whose Hessians are narrower.
+  damp_percent: 0.01
+  damp_auto_increment: 0.0025
+
+  # Calibration data spec
+  n_calib_plantnet: 256
+  n_calib_text: 256
+  calib_seq_len: 1024
+  calib_seed: 0
+
+  # Backend selection. ``gptqmodel`` is the only path implemented today;
+  # ``auto_gptq`` / ``optimum`` are stubs in ``methods/gptq.py``.
+  backend: gptqmodel
+
+  offload_to_disk: true
+  batch_size: 1
+
+calibration:
+  # If set, used as the default --plantnet_jsonl. CLI overrides win.
+  # Must point at train.jsonl (or another held-out split disjoint from
+  # eval). ``CalibrationDataLeakError`` rejects val.jsonl / overfit100.
+  plantnet_jsonl: null

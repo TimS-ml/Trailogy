@@ -1,0 +1,28 @@
+# [RUNTIME] Mac (Apple Silicon, M-series) — mlx-lm native quant.
+#
+# Method: dynamic_quant — per-tensor sensitivity-driven mixed precision.
+# Wraps mlx_lm.quant.dynamic_quant.main.
+#
+# Sensitivity pass uses bfloat16 grad accumulation to stay within 32 GB.
+# Targets 4 bpw average via a {3-bit, 4-bit} two-tier policy.
+
+method: dynamic_quant
+
+quant:
+  target_bpw: 4.0
+  low_bits: 3
+  low_group_size: 64
+  high_bits: 4
+  high_group_size: 64
+  grad_checkpoint: true
+  accumulation_dtype: bfloat16
+  seed: 0
+
+smoke:
+  max_tokens: 128
+
+ppl:
+  batch_size: 4
+  sequence_length: 512
+  max_batches: 200
+  checkpoint_every: 32

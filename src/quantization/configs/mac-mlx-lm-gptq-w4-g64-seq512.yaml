@@ -1,0 +1,26 @@
+# [RUNTIME] Mac (Apple Silicon, M-series) — mlx-lm native quant.
+#
+# Method: GPTQ, but with Apple's UPSTREAM DEFAULT sequence_length=512
+# (vs our usual 2048). The 2048-seq variant produced NaN forward-pass
+# logits on Gemma 4 E2B; testing whether shorter calibration sequences
+# avoid the numerical-instability path.
+
+method: gptq
+
+quant:
+  bits: 4
+  group_size: 64
+  fallback_bits: 6
+  fallback_group_size: 64
+  num_samples: 256
+  sequence_length: 512      # ← Apple's upstream default
+  seed: 0
+
+smoke:
+  max_tokens: 64
+
+ppl:
+  batch_size: 4
+  sequence_length: 512
+  max_batches: 55
+  checkpoint_every: 16

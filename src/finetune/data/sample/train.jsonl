@@ -1,0 +1,5 @@
+{"image": "data/sample/img/eastern_hemlock.jpg", "conversations": [{"role": "user", "content": "What plant is this?"}, {"role": "assistant", "content": "This is Eastern Hemlock (Tsuga canadensis)."}]}
+{"image": "data/sample/img/sugar_maple.jpg", "conversations": [{"role": "user", "content": "Identify this tree."}, {"role": "assistant", "content": "Sugar Maple (Acer saccharum)."}]}
+{"image": "data/sample/img/red_oak.jpg", "conversations": [{"role": "user", "content": "What species is this?"}, {"role": "assistant", "content": "Northern Red Oak (Quercus rubra)."}]}
+{"image": "data/sample/img/balsam_fir.jpg", "conversations": [{"role": "user", "content": "Found this on the trail. What is it?"}, {"role": "assistant", "content": "Balsam Fir (Abies balsamea)."}]}
+{"image": "data/sample/img/paper_birch.jpg", "conversations": [{"role": "user", "content": "Help me identify this tree."}, {"role": "assistant", "content": "Paper Birch (Betula papyrifera)."}]}

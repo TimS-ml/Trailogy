@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Data (large files) — but ALWAYS keep the dry-run sample fixture.
+data/*.jsonl
+data/plantnet/
+data/raw/
+!data/sample/
+
+# Training outputs
+outputs/
+checkpoints/
+wandb/
+*.pt
+*.bin
+
+# MLX export
+mlx_export/
+merged_model/
+
+# Environment
+.env
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Unsloth compiled cache
+unsloth_compiled_cache/

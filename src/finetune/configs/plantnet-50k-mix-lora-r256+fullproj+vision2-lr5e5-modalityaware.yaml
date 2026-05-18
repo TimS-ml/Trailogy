@@ -1,0 +1,167 @@
+# v2 training config: 50K mix (Plant 45 / LLaVA 30 / smoltalk 15 / Negative 10).
+#
+# Same idea as the 100K config, half the data. Use this for ablation
+# experiments (does 50K reach the same loss as 100K? cheaper budget).
+#
+# Differences vs the 100K config:
+#  - data.train_file / data.val_files point at data_mix/_local/mix-50k
+#  - 50K rows / batch 16 / 5 epoch = 15,625 steps; save_steps=500 ->
+#    31 ckpts -> ~6.3 GB disk. Even less burden than 100K.
+#  - Otherwise identical model/lora/optimizer hyperparams.
+#
+# v3 knob promotion (2026-05-16): the archive_v2/ Stage-1 sweep showed
+# two single-knob winners on n=300 val quick-eval vs the LoRA-only
+# baseline:
+#  - +drop005   (lora_dropout 0.0 -> 0.05)        +12.7 pp species
+#  - -projlr1e4 (projector_lr   5.0e-5 -> 1.0e-4) +13.7 pp species
+# Both promoted into this v2 mix config; see archive_v2/
+# plantnet-50k-baseline{4,6}-*.yaml for the original single-knob configs.
+
+model:
+  base_model: "unsloth/gemma-4-E2B-it"
+  max_seq_length: 1024
+  load_in_4bit: false
+  full_finetuning: false
+  dtype: bfloat16
+
+lora:
+  finetune_vision_layers: false
+  finetune_audio_layers: false
+  finetune_language_layers: true
+  finetune_attention_modules: true
+  finetune_mlp_modules: true
+  r: 256
+  lora_alpha: 256
+  # v3 knob: lora_dropout 0.0 -> 0.05. Stage-1 baseline4 winner.
+  # Regularizes the LoRA path on the ~57-img/species training distribution.
+  lora_dropout: 0.05
+  bias: "none"
+  random_state: 3407
+  tune_projector: true
+  # v3 knob: projector_lr 5.0e-5 -> 1.0e-4. Stage-1 baseline6 winner.
+  # Doubles the cross-modal projector LR (still half of training.learning_rate).
+  projector_learning_rate: 1.0e-4
+  tune_last_n_vision_layers: 2
+  vision_layers_learning_rate: 1.0e-5
+
+training:
+  output_dir: "outputs/plantnet-50k-mix-lora-r256+fullproj+vision2-lr5e5-modalityaware"
+  # bs / gradient_accumulation: v2 baseline7 ran at (16, 1) on PlantNet-only
+  # data, but the v3 LLaVA-mix path admits variable-sized incidental images
+  # that blow up the vision-tower MLP intermediate buffer for large images.
+  # At bs=4 most batches fit but occasionally an LLaVA batch with very
+  # large images OOMs (~60 steps in, observed). bs=2 keeps total effective
+  # batch at 16 (gas=8) and the per-step vision intermediate ~125 MB —
+  # robust to the LLaVA size variance. Future optimization: pre-resize
+  # LLaVA images to a max bound at sampling time (mirrors what we do for
+  # PlantNet via prepare_plantnet's --resize_to). If you re-enable the KL
+  # regularizer below, this setting also gives the teacher forward enough
+  # headroom on a 4090 24G.
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 8
+  num_train_epochs: 5
+  max_steps: null
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.03
+  warmup_steps: 234
+  logging_steps: 10
+  optim: "adamw_torch_fused"
+  weight_decay: 0.001
+  lr_scheduler_type: "cosine"
+  seed: 3407
+  # v3: checkpoint every 1000 steps (was 500). 50K rows / batch 16 /
+  # 5 epoch = 15,625 steps → ~16 checkpoints → ~3.2 GB disk @ ~200 MB
+  # per LoRA+projector+vision-layers ckpt. Keep all (save_total_limit
+  # null) so we can pick the best by mid-training eval after the fact.
+  save_steps: 1000
+  report_to: "none"
+  dataloader_num_workers: 8
+  dataloader_pin_memory: true
+  tf32: true
+  save_total_limit: null
+
+  eval_strategy: "steps"
+  eval_steps: 1000
+  per_device_eval_batch_size: 4
+
+  modality_aware_sampler: true
+  group_by_length: false
+
+data:
+  train_file: "data/mix-50k/train.jsonl"
+  val_file: null
+  val_files:
+    plant:      "data/mix-50k/val_plant.jsonl"
+    nonplant:   "data/mix-50k/val_nonplant.jsonl"
+    negative:   "data/mix-50k/val_negative.jsonl"
+    # v3: persona watch — 4 records, tracks "I'm an offline AI" persona
+    # signal independently of plant-ID / refusal degradation.
+    offline_qa: "data/mix-50k/val_offline_qa.jsonl"
+  max_train_samples: null
+  max_val_samples: null
+  augmentation: true
+  # v4: camera-state conditional-FT input gate. Prepends a literal
+  # marker to the first user turn of every training record, dispatched
+  # on image presence (independent of bucket / topic):
+  #   record has image     → "[camera=on] "  + user text
+  #   record has no image  → "[camera=off] " + user text
+  #
+  # In the v2 mix:
+  #   plant, cambrian, llava  → image-bearing → [camera=on]
+  #   smoltalk, offline_qa     → text-only    → [camera=off]
+  #   negative                 → mostly text-only → [camera=off]
+  #                              (image-grounded refusal records → [camera=on])
+  #
+  # iOS side (GemmaService) MUST prepend the matching marker:
+  #   .vlm  (image captured)  → "[camera=on] "  + user prompt
+  #   .text (no image)        → "[camera=off] " + user prompt
+  # otherwise prompts miss the gate and the model behaves like base.
+  prompt_prefixes:
+    camera_on:  "[camera=on] "
+    camera_off: "[camera=off] "
+
+eval:
+  enabled: true
+  max_eval_samples: 300
+  max_new_tokens: 256
+  use_unsloth: true
+  batch_size: 1
+  load_in_4bit: false
+
+# v3: KL penalty against base model + L2 weight anchor (toward init).
+#
+# CURRENTLY DISABLED — keep the code paths exercised by tests but ship
+# the v3-baseline run with the same numerics as v2 (CE + prompt-tag
+# prefix only). Reason: at bs=16 LoRA r=256 + projector + last-2
+# vision layers, the additional KL teacher forward (a [B, T, V]
+# bf16 logits tensor — 8 GB at B=16/V=262 K for Gemma 4) AND the L2
+# snapshot (~800 MB bf16 copies of all 406 M trainable params)
+# combined with the existing forward activations push past the 24 GB
+# 4090 budget. The chunked-KL implementation already trades wall-clock
+# for memory, but the per-step student-logits tensor stays alive for
+# the CE backward and dominates the peak.
+#
+# To re-enable KL on a 4090: drop per_device_train_batch_size to 1-2
+# above, bump gradient_accumulation_steps to 16-8 (keeps effective
+# batch 16), then flip kl_enabled/l2_enabled true here. Expect a
+# 4-5 × wall-clock hit on the small batch size but a stable run.
+#
+# KL semantics: teacher = same model under PEFT disable_adapter() (zero
+# extra GPU mem from a second model). kl_weight=0.05 is conservative —
+# at typical CE losses in the 1-2 range the KL term contributes 5-10 %
+# of total loss after a few hundred steps of drift. Mirrors the
+# policy-vs-reference KL used in RLHF / DPO, applied here at SFT time.
+#
+# L2 semantics: anchors every trainable param (LoRA delta +
+# modules_to_save) to its value at trainer init. l2_weight=1e-4 keeps
+# the term well below CE in the early phase; it grows as the optimizer
+# pushes params further from init. For modules_to_save (projector +
+# last-N vision layers) the snapshot value is the pretrained weight,
+# which makes the L2 a "weight-space anchor against drift" in the
+# EWC sense.
+regularization:
+  kl_enabled: false
+  kl_weight: 0.05
+  kl_temperature: 1.0
+  l2_enabled: false
+  l2_weight: 1.0e-4

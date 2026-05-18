@@ -1,0 +1,14 @@
+# MLX VLM quantization, 4-bit, group-size 32 (finer than baseline).
+#
+# Finer group => more scales/biases => larger file, better accuracy.
+# Useful for the size/accuracy frontier sweep.
+#
+# Hardware: Apple Silicon Mac, or Linux + NVIDIA (mlx-cuda-12).
+# Loaded by ``run_quant.py --config <this file>``.
+
+method: mlx_vlm_g32
+
+mlx_vlm:
+  quantize: true
+  q_bits: 4
+  q_group_size: 32  # pinned by method name; YAML override is rejected
