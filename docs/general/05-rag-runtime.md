@@ -2,21 +2,20 @@
 
 ## TL;DR
 
-- Retrieval runs fully on-device using a bundled sentence embedder and small pre-embedded subject corpora.
-- Each trail activates one or more subject areas, and a debug override can change that active set at runtime.
-- For each question, the top retrieved chunks are inserted once into the language-model prompt and cleared after generation.
-- The retrieval embedder stays loaded across language-model unloads because it is small enough not to compete for memory.
+RAG is designed to give Trailogy factual, trail-specific knowledge without making the model bigger. Natural science knowledge is organized into small pre-embedded subject corpora, such as geology, ecology, plants, and local history. Each trail activates only the subject areas relevant to that place, so retrieval stays focused on what the user is actually exploring.
+
+Retrieval runs fully on-device using a bundled sentence embedder and local vector search. For each user question, Trailogy searches only the active subject set for that trail, inserts the top retrieved chunks into the language-model prompt, and clears them after generation. A debug override can change the active subject set at runtime for testing.
+
+The retrieval embedder stays loaded across language-model unloads because it is small enough not to compete meaningfully for memory.
 
 ## Design summary
 
-Tiny resident embedder + flat vector search, with two upgrades over
-the naive "download MiniLM on first launch" approach:
+Tiny resident embedder + flat vector search, with two upgrades over the naive “download MiniLM on first launch” approach:
 
-1. **Embedder is bundled in-app** (~87 MB) instead of pulled from
-   HuggingFace at runtime.
-2. **Multi-subject active set + per-trail defaults + DebugView
-   override** replaces a hardcoded `setActiveSubject(.geology)`.
-
+Bundled on-device embedder
+The embedder is packaged with the app, about 87 MB, instead of being pulled from Hugging Face at runtime. This keeps the experience offline-ready and avoids first-launch dependency issues.
+Trail-specific subject activation
+Instead of hardcoding retrieval to a single subject like setActiveSubject(.geology), each trail defines its own active subject areas. For example, one trail may activate geology and forest ecology, while another may activate wetlands, plants, and local history. DebugView can override the active set at runtime, which made testing and tuning easier.
 ## Components
 
 ```mermaid
