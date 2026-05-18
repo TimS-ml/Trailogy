@@ -2,11 +2,11 @@
 
 ## TL;DR
 
-- This doc explains the quantization methods under test and the evaluation protocol used to compare them fairly.
-- `mlx_vlm.convert -q` is the default deploy route because it produces the MLX format consumed by the iOS runtime.
-- CUDA/HF methods such as GPTQ and AWQ are useful reference paths, but their outputs need separate handling before they can become iOS artifacts.
-- bitsandbytes NF4 is reference-only here because quantizing the vision tower caused PlantNet accuracy to collapse to 0.1 %.
-- Quick-test results use PlantNet n=300 with seed 0, so readers should treat small differences as noisy unless backed by larger evaluations.
+- This is the methods companion to the quantization report: it explains which compression routes were compared and what counted as a fair eval.
+- `mlx_vlm.convert -q` is the default deploy route because it produces the MLX/VLM model shape consumed by the iOS runtime.
+- CUDA/HF methods such as GPTQ and AWQ are useful reference paths, but their outputs are not ship candidates unless they can be converted back into the iOS-loadable MLX/VLM tree.
+- bitsandbytes NF4 is a warning case, not a candidate, because generic vision-tower quantization collapsed PlantNet accuracy to 0.1 %.
+- Quick-test results use PlantNet n=300 with seed 0, so small deltas are iteration signals unless backed by larger evaluations.
 
 What we test and how we measure it. Companion to:
 

@@ -2,10 +2,10 @@
 
 ## TL;DR
 
-- Trailogy is an offline iOS trail guide that runs language, vision, speech, and retrieval models on the device with no runtime network dependency.
-- SwiftUI views call long-lived services owned by the root view, and only the walking experience drives model inference.
-- The app bundle includes the model files, trail content, retrieval corpus, and image assets needed for normal use.
-- The public app name is Trailogy, while some internal target and source names remain unchanged to avoid provisioning churn.
+- This is the implementation detail behind the writeup's offline app and FSM description: Trailogy runs language, vision, speech, and retrieval locally, with no runtime network dependency.
+- The walking screen is the only place that drives model inference; other screens select trails, show package assets, or display the recap.
+- Long-lived services coordinate Gemma, MiniLM retrieval, Kokoro TTS, speech input, camera input, and memory cleanup while the UI moves through the hike.
+- The tour and Ask flows are separated so narration, hold-to-question, answers, and end-of-hike recap do not fight for the same model or audio resources.
 
 ## What The App Does
 

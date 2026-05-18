@@ -1,10 +1,12 @@
 # Audio & TTS
 
-> TL;DR — Trailogy is audio-first so hikers can keep their eyes on the
-> trail. We use Kokoro 82M (MLX) for natural speech, drove it with
-> sentence-chunk streaming so playback starts in 1–2 s instead of 5–10
-> s, and skipped both Gemma 4's audio decoder and Apple's system TTS
-> after evaluating them. CoreML Kokoro was tried first and abandoned.
+> TL;DR — This is the detail doc behind the writeup's audio-first
+> architecture paragraph. Trailogy keeps hikers' eyes up by turning
+> retrieved Gemma answers into spoken narration. We use Kokoro 82M on
+> MLX because Gemma 4's small-model audio decoder was unavailable,
+> Apple's system TTS was not natural enough for the product feel, and
+> the first CoreML Kokoro path was too slow. Sentence-chunk streaming
+> makes playback start in 1-2 s instead of waiting for a full response.
 
 ## Why audio-first
 

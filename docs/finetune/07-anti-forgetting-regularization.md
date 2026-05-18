@@ -2,10 +2,10 @@
 
 ## TL;DR
 
-- This doc deep-dives into anti-forgetting tools for a plant-identification finetune that still needs to answer general questions.
-- It designs three complementary controls: KL against the base model, an L2 anchor toward initial weights, and camera-state prompt tags.
-- Each mechanism targets a different failure mode: output-distribution drift, weight-space drift, or confusion about whether an image is present.
-- The final recipe later kept only the camera-state tag, making the other two mechanisms documented fallback options rather than default training behavior.
+- This is the deep dive behind the regularization sentence in the writeup's catastrophic-forgetting section.
+- It designs three complementary controls for a plant-identification finetune that still needs to act like a general assistant: KL against the base model, an L2 anchor toward initial weights, and camera-state prompt tags.
+- Each mechanism targets a different failure mode: output-distribution drift, weight-space drift, or confusion about whether the current turn has an image.
+- The final recipe later kept only the camera-state tag, making KL and L2 documented fallback options rather than default training behavior.
 
 ## Context
 

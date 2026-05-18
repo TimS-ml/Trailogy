@@ -2,10 +2,10 @@
 
 ## TL;DR
 
-- Every training and app prompt gets `[camera=on]` when an image is present or `[camera=off]` when the turn is text-only.
-- The marker tells the model whether to use vision context without hard-coding the topic of the question.
-- This replaced an older source-based tag system that depended on dataset labels such as plant or refusal examples.
-- The app can emit the same marker from its existing text-versus-image branch, so no extra runtime state is needed.
+- This is the prompt-level mechanism referenced by the writeup's catastrophic-forgetting fix: the model gets an explicit modality signal before every turn.
+- Training and app prompts use `[camera=on]` when an image is present and `[camera=off]` when the turn is text-only.
+- The marker tells the model whether to use vision context without hard-coding the topic, so camera-on does not always mean plant classification and camera-off stays normal chat/RAG behavior.
+- This replaced an older source-based tag system and maps directly onto the app's existing text-versus-image branch, so no extra runtime state is needed.
 
 How the conditional-FT input-gate prefix is plumbed from config to
 the tokens the model actually sees. The mechanism is **input-gate**

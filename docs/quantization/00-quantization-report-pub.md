@@ -2,10 +2,10 @@
 
 ## TL;DR
 
-- This is the entry point for the Gemma 4 E2B quantization sweep, where the target is an iOS-loadable artifact at or below 4 GB from a 9.54 GB bf16 SFT merge.
+- This is the headline report behind the writeup's on-device quantization challenge: the bf16 SFT merge was about 9.5 GB, but the iOS target needed an MLX/VLM-loadable artifact under the practical mobile memory budget.
 - The recommended deploy candidate is M8b: MLX affine 4-bit g64 plus EoRA r=64, landing at 3.6 GB and 88.0 % PlantNet on the n=300 quick test.
-- M8b is effectively tied with the MLX bf16 reference at 88.3 %, so readers should treat it as the current ship candidate rather than just a compression demo.
-- The CUDA/HF hybrid route cross-checks the tradeoff at 3.41 GB and 83.7 %, but it is not the iOS deployment format.
+- M8b is effectively tied with the MLX bf16 reference at 88.3 %, so quantization is not treated as a packaging afterthought; it is part of preserving the fine-tuned model's behavior.
+- CUDA/HF hybrid rows are useful cross-checks for quality and size, but they are not the iOS deployment format unless bridged back through the MLX/VLM runtime path.
 
 One-page summary of the quantization sweep on the SFT'd Gemma 4 E2B.
 Per-method numbers and reproduction recipes live in the per-route

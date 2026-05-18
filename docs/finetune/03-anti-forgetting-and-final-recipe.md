@@ -2,10 +2,10 @@
 
 ## TL;DR
 
-- This doc explains how the finetune tried to add plant knowledge without making the model forget general assistant skills.
-- The recorded shipped recipe uses rank 8 LoRA, alpha 8, projector tuning, no KL penalty, no L2 anchor, and 3 epochs on a mixed dataset.
+- This is the main follow-up to the writeup's catastrophic-forgetting challenge: early plant SFT improved species answers but made unrelated prompts sound like plant classification tasks.
+- The final recipe keeps the adaptation small and product-shaped: rank 8 LoRA, alpha 8, projector tuning, 3 epochs, and a mixed dataset rather than plant-only training.
 - On a 300-sample PlantNet validation slice, species match rose from 0.000 to 0.230 while general benchmarks stayed at or above the base model.
-- Of the anti-forgetting ideas considered, the production recipe kept only the camera-state prompt tag; KL and L2 remained fallback designs.
+- The shipped anti-forgetting mechanism is the camera-state prompt tag plus data mixing; KL and L2 are documented fallback controls rather than default training behavior.
 
 How we kept Gemma 4 E2B from forgetting how to be a general assistant
 while teaching it 782 plant species, and the small-rank recipe that

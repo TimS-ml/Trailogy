@@ -2,13 +2,13 @@
 
 ## TL;DR
 
-RAG is designed to give Trailogy factual, trail-specific knowledge without making the model bigger. Natural science knowledge is organized into small pre-embedded subject corpora, such as geology, ecology, plants, and local history. Each trail activates only the subject areas relevant to that place, so retrieval stays focused on what the user is actually exploring.
+This is the detail doc behind the writeup's claim that Gemma is the reasoning layer, not the only source of trail truth. Trail facts stay in the downloaded trail package, where they can be curated, updated, and scoped to a specific hike.
 
 The factual content backing the three demonstration trails is **crawled from authoritative public sources and then verified twice — once by a human reviewer, once by GPT-5** — before any chunk reaches the on-device corpus. The fetching pipeline is built with both factuality checks and scalability in mind, so new trails can be added without redoing the retrieval architecture (see [Corpus provenance & the fetching pipeline](#corpus-provenance--the-fetching-pipeline)).
 
-Retrieval runs fully on-device using a bundled sentence embedder and local vector search. For each user question, Trailogy searches only the active subject set for that trail, inserts the top retrieved chunks into the language-model prompt, and clears them after generation. A debug override can change the active subject set at runtime for testing.
+At runtime, Trailogy uses a bundled MiniLM embedder and local vector search to retrieve from the trail's active subject areas, such as geology, ecology, plants, or local history. The top chunks are inserted into the Gemma prompt for that one answer and cleared after generation.
 
-The retrieval embedder stays loaded across language-model unloads because it is small enough not to compete meaningfully for memory.
+The embedder stays resident because it is small next to Gemma, while the retrieved context remains one-shot so each answer is grounded without turning the model into a trail-fact database.
 
 ## Design summary
 

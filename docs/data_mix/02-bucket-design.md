@@ -2,10 +2,10 @@
 
 ## TL;DR
 
+- This is the data-mix doc behind two writeup claims: avoiding plant-only collapse and teaching the offline assistant not to invent live facts.
 - All training examples use one JSONL shape with an optional `image`, a `source` label, and alternating user/assistant messages.
-- The mix combines plant identification, general image questions, text-only chat, non-plant refusal examples, and offline persona QA.
-- Plant examples stay below half of the corpus so the model learns plant skills without treating every prompt as plant-related.
-- Text-only records now use `image: null` instead of a fake placeholder image.
+- The mix combines plant identification, general image questions, text-only chat, non-plant refusal examples, and a small offline_qa bucket for weather, closures, and other live-information limits.
+- Plant examples stay below half of the corpus, and text-only records use `image: null`, so the model learns plant skills without treating every prompt as plant-related.
 
 How each source bucket is built into a unified JSONL record that
 drops into `finetune/src/data.py::load_vision_dataset` without
