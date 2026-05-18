@@ -13,9 +13,21 @@
 - Start with the reading order below if you want the shortest path to
   "what shipped and why".
 
-This folder is written for reviewers first and maintainers second. The
-first-pass path explains the project as a sequence of problems, fixes, and
-results. The longer experiment reports remain available as appendices.
+Engineering notes and experiment reports. The per-module docs mirror
+the code under `src/`; `general/` carries cross-cutting docs
+(architecture, dev timelines, eval setup, known bugs, postmortems).
+
+```
+docs/
+├── general/          # architecture, timelines, eval, postmortems (cross-cutting)
+├── data_mix/         # data prep, mix recipes, prompt-prefix gating
+├── finetune/         # SFT pipeline, projector/vision modes, final recipe
+└── quantization/     # post-training quantization (GPTQ, MLX, EoRA)
+```
+
+These docs trade some polish for completeness. They describe the
+actual experiments that shipped, including failed paths and the
+reasoning behind each design decision.
 
 ## First-Pass Reading Order
 

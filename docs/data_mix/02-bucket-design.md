@@ -7,6 +7,12 @@
 - Plant examples stay below half of the corpus so the model learns plant skills without treating every prompt as plant-related.
 - Text-only records now use `image: null` instead of a fake placeholder image.
 
+How each source bucket is built into a unified JSONL record that
+drops into `finetune/src/data.py::load_vision_dataset` without
+modification. Versioned: v1 used Cambrian (blocked) + a dummy gray
+image trick for text-only records; v2 replaces Cambrian with LLaVA
+and allows `image=None` for text-only records natively.
+
 ## Why A Mixed Corpus Was Needed
 
 PlantNet examples teach a valuable skill, but plant-only training creates a bad

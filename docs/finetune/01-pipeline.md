@@ -9,6 +9,35 @@
 - The baseline keeps the vision tower, audio tower, and vision projector frozen so the experiment isolates language-side LoRA behavior.
 - The main takeaway is to guard against silent export failures: use a multimodal loader, use the VLM converter, and preserve the trained image size in the processor config.
 
+How `src/finetune/` turns a stock multimodal Gemma 4 E2B
+checkpoint and a stack of PlantNet-300K plant photos into a LoRA
+adapter that can be merged + re-quantized into the same INT4 MLX shape
+the iOS app already ships.
+
+This doc covers the **baseline LoRA-only mode** (vision tower, audio
+tower, and the `embed_vision` projector all frozen; LoRA only on the
+language model). For the two opt-in modes that unfreeze additional
+modules, see:
+
+- [`02-projector-mode.md`](02-projector-mode.md) — adds full-param
+  tuning of the `embed_vision` projector. **This is the current
+  production baseline-1 recipe** (see `B1-sft-results.md` R0).
+- [`03-vision-mode.md`](03-vision-mode.md) — additionally unfreezes the
+  last N transformer blocks of the vision encoder. Works correctly
+  post-package-fix but treated as a **default-negative probe** at
+  production scale.
+
+For the "should we add 4-bit at training time" decision (bnb QLoRA vs
+torchao QAT), see [`06-bnb-vs-torchao-sft.md`](06-bnb-vs-torchao-sft.md).
+
+It is the training-side mirror image of the inference-side
+preprocessing traps documented in
+[`../general/13-mlx-vision-input-parity.md`](../general/13-mlx-vision-input-parity.md);
+that one explains the inference-side traps, this one explains the
+training-side mirror.
+
+---
+
 ## What Problem This Pipeline Solves
 
 The iOS app needs an MLX/VLM-format Gemma 4 checkpoint, but training happens in

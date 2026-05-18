@@ -7,6 +7,9 @@
 - The experiment notes explain why the recipe favors bf16 supervised finetuning, frozen vision/audio towers, projector tuning, small-rank LoRA, and no KL penalty.
 - Later ablations show that removing the text-only camera prefix and moving to rank 16 produced the strongest recorded recipe.
 
+Engineering notes and experiment reports for the Gemma 4 E2B bf16
+finetune on PlantNet-300K.
+
 ## Read First
 
 | Read | Why |

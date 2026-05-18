@@ -44,6 +44,7 @@ export merges adapter into a bf16 multimodal checkpoint
 quantization converts to an MLX/VLM iOS-loadable artifact
         |
         v
+iOS bundle loads Gemma locally for text and image asks
 ```
 
 Local trail facts are deliberately not baked into the model. They live in the

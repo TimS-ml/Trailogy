@@ -8,6 +8,13 @@
 - bitsandbytes NF4 is reference-only here because quantizing the vision tower caused PlantNet accuracy to collapse to 0.1 %.
 - Quick-test results use PlantNet n=300 with seed 0, so readers should treat small differences as noisy unless backed by larger evaluations.
 
+What we test and how we measure it. Companion to:
+
+- `B1-sft-results.md` — per-variant HF/CUDA results
+- `B2-sft-results.md` — per-variant MLX results (iOS-deployable)
+- `B1-bnb-nf4-vision-collapse.md` — why bnb NF4 kills vision-tower-quantized variants
+- `05-mlx-vlm-design.md` — the active design for the MLX-VLM path
+
 ## Methods We Actually Compare
 
 | Method | Why it exists | Deployment relevance |

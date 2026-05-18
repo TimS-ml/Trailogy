@@ -7,6 +7,10 @@
 - On a 300-sample PlantNet validation slice, species match rose from 0.000 to 0.230 while general benchmarks stayed at or above the base model.
 - Of the anti-forgetting ideas considered, the production recipe kept only the camera-state prompt tag; KL and L2 remained fallback designs.
 
+How we kept Gemma 4 E2B from forgetting how to be a general assistant
+while teaching it 782 plant species, and the small-rank recipe that
+actually shipped.
+
 ## The Problem
 
 The first useful plant-focused fine-tunes were too narrow. They improved plant

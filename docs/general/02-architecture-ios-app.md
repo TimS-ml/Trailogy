@@ -9,8 +9,9 @@
 
 ## What The App Does
 
-Trailogy is an offline AI companion for a guided hike. Before the hike, the
-user downloads a trail package. During the hike, the app can narrate stops,
+Trailogy is an offline AI companion for a guided hike. In the product model,
+the trail package is available before the hike; in this repo/demo, the package
+assets are bundled with the app. During the hike, the app can narrate stops,
 answer spoken questions, answer photo-based questions, and generate a recap at
 the end.
 
@@ -28,7 +29,7 @@ use.
 | Apple speech recognition | On-device speech-to-text for hold-to-ask. |
 | MLX Swift / Metal | Shared runtime for Gemma, Kokoro, and embeddings. |
 
-Gemma is not the only source of truth. Trail facts live in the downloaded
+Gemma is not the only source of truth. Trail facts live in the preloaded trail
 package and are retrieved into the prompt. Gemma turns those facts into a short,
 spoken explanation.
 
@@ -54,7 +55,7 @@ assets, or display the recap.
 ## User Flow
 
 ```text
-Pick trail -> download package -> begin walk
+Pick trail -> confirm package is available -> begin walk
     |
     v
 At each stop: play narration about what is nearby

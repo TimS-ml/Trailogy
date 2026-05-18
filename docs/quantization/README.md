@@ -7,6 +7,14 @@
 - The current recommended artifact comes from the MLX-native route; the CUDA/HF route remains useful as an independent accuracy and size cross-check.
 - Start with `00-quantization-report-pub.md` for headline results, then use the route-specific files for reproduction details and failure analysis.
 
+Engineering notes for the deploy-time quantization sweep. Companion to
+the code in `src/quantization/`. The goal: produce a quantized SFT'd
+Gemma 4 E2B under 4 GB on disk (target ~3.0-3.6 GB) with minimal
+accuracy drop on PlantNet.
+
+Route A (4-bit SFT) docs are prefixed `A-`. Route B.1 (HF/CUDA) and
+B.2 (MLX deploy) live alongside.
+
 ## Read First
 
 | Read | Why |

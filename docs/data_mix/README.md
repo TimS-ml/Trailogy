@@ -8,6 +8,16 @@
 - Historical notes explain why the first 20K mix and source-based prompt tags were replaced.
 - The data-mix tests use mocked remote data streams, so they can run without network access.
 
+Engineering notes for the mixed-source SFT corpus. Companion to the
+code in `src/data_mix/`. The goal: break PlantNet's monopoly on the
+LoRA subspace so the fine-tuned Gemma 4 E2B doesn't answer "plant"
+to every prompt.
+
+This is the **data side** of the anti-forgetting stack. The finetune-
+side companion (KL output-distribution penalty + L2 weight anchor +
+camera-state prefix wiring) is in
+[`../finetune/03-anti-forgetting-and-final-recipe.md`](../finetune/03-anti-forgetting-and-final-recipe.md).
+
 ## Read First
 
 | Read | Why |

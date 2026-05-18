@@ -7,6 +7,14 @@
 - M8b is effectively tied with the MLX bf16 reference at 88.3 %, so readers should treat it as the current ship candidate rather than just a compression demo.
 - The CUDA/HF hybrid route cross-checks the tradeoff at 3.41 GB and 83.7 %, but it is not the iOS deployment format.
 
+One-page summary of the quantization sweep on the SFT'd Gemma 4 E2B.
+Per-method numbers and reproduction recipes live in the per-route
+files; this doc is the entry point and the headline-result table.
+
+For the MLX stack mental model (mlx-vlm as deploy substrate, mlx-lm
+as quant-core provider), read [`05-mlx-vlm-design.md`](05-mlx-vlm-design.md)
+first.
+
 ## Why Quantization Was A Core Problem
 
 The merged bf16 SFT model is about 9.5 GB. That is not a practical iOS artifact.
