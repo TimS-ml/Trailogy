@@ -1,8 +1,11 @@
 # SFT sweep plan — adaptive multi-stage exploration
 
-## TLDR
+## TL;DR
 
-Pre-deadline plan to push SFT ceiling +2-5pp above baseline-1 (70.6% PlantNet n=2870) with a 3-stage adaptive sweep: single-knob ablations, combos, then full eval + quantization. Stage 1 results (after fixing an n=200-vs-n=300 reference mistake): baseline-4 (`+drop005`) +12.67pp and baseline-6 (`-projlr1e4`) +13.67pp are strong promotion candidates; baseline-5 (`-a512`) +4.67pp is weaker.
+- This doc lays out a staged experiment plan for improving supervised finetuning accuracy before deployment quantization.
+- The sweep starts with single-knob ablations, promotes promising settings into combinations, then runs full evaluation and quantization on the winners.
+- The target was to beat the baseline-1 PlantNet score of 70.6% by a few percentage points while keeping the experiment interpretable.
+- Early Stage 1 results found strong candidates after correcting an evaluation-reference mistake, with two variants improving the quick eval by more than 12 percentage points.
 
 > last edit: 2026-05-16
 > Strategic + execution plan for the pre-deadline SFT push.

@@ -1,8 +1,11 @@
 # 01 — Data prefix mechanism (v4 camera-state gate)
 
-## TLDR
+## TL;DR
 
-The v4 input-gate prefix tags every prompt with `[camera=on] ` or `[camera=off] ` based on whether the record has an image. This replaces the v3 source-keyed `[task=plantnet]`/`[task=refuse]` dispatch, which coupled the gate to dataset bookkeeping and overloaded the marker with topic. The on-device iOS app reuses its existing `.text`/`.vlm` mode branch to emit the same marker at inference, so no schema change or extra runtime state is required.
+- Every training and app prompt gets `[camera=on]` when an image is present or `[camera=off]` when the turn is text-only.
+- The marker tells the model whether to use vision context without hard-coding the topic of the question.
+- This replaced an older source-based tag system that depended on dataset labels such as plant or refusal examples.
+- The app can emit the same marker from its existing text-versus-image branch, so no extra runtime state is needed.
 
 How the conditional-FT input-gate prefix is plumbed from config to
 the tokens the model actually sees. The mechanism is **input-gate**

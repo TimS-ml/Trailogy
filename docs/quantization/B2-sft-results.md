@@ -1,8 +1,12 @@
 # SFT'd Gemma 4 E2B — MLX (iOS-deployable) quantization baselines
 
-## TLDR
+## TL;DR
 
-Per-variant MLX results on the data-aug-enwiki SFT — the actual iOS deploy candidates. bf16 ceiling (M0) is 88.3 % PlantNet at n=300. Flat affine (M1/M2/M3 at g128/g64/g32) lands 83-84 % at 3.2-3.6 GB. EoRA post-quant adapter on top of M2 recovers most of the drop: M8b r=64 at 3.6 GB / 88.0 % is within statistical noise of bf16 and is the recommended ship. MLX hybrid GPTQ/AWQ/DWQ cores are blocked or worse on Gemma 4.
+- This doc reports the MLX quantization results for the data-aug-enwiki SFT, which are the actual iOS-deployable candidates.
+- The MLX bf16 reference reaches 88.3 % PlantNet on n=300, while flat 4-bit affine variants reach 83-84 % at 3.2-3.6 GB.
+- Adding an EoRA post-quant adapter to M2 recovers the gap: M8b r=64 reaches 3.6 GB and 88.0 %, within statistical noise of bf16.
+- MLX hybrid GPTQ, AWQ, and DWQ cores are blocked or weaker on Gemma 4, so readers should not treat them as the current ship path.
+- Use M8b as the recommended deploy candidate unless a larger evaluation overturns the n=300 result.
 
 Per-variant detail for every MLX-side quantization we've run on our
 **SFT'd** Gemma 4 E2B. These are the candidates that load directly via

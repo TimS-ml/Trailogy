@@ -1,8 +1,12 @@
 # B1 quantization tooling — torchao vs GPTQModel
 
-## TLDR
+## TL;DR
 
-Decomposes the B.1 toolchain pick. GPTQModel's ~7 GB ceiling is not a Linear-quality gap vs MLX's 3.2 GB — it's an embedding-coverage gap: GPTQ never touches the 4.7 GB `embed_tokens_per_layer` table. Verdict: use both. GPTQModel for the 35-layer Linears (validated Gemma 4 shim), torchao `Int4WeightOnlyConfig` for the embedding. After fixing an `embed_scale` bug the hybrid pipeline lands 3.41 GB / 83.7 % with zero accuracy loss vs the bf16-embed R3 baseline.
+- This doc explains why the B.1 route needs both GPTQModel and torchao rather than choosing one tool.
+- GPTQModel's size ceiling is an embedding-coverage problem, not a Linear-quality problem: it leaves the 4.7 GB `embed_tokens_per_layer` table uncompressed.
+- GPTQModel remains the right choice for decoder Linears because it has the validated Gemma 4 calibration shim.
+- torchao is used for the large embedding table, and after fixing `embed_scale`, the hybrid pipeline reaches 3.41 GB and 83.7 %.
+- Readers should follow the hybrid decomposition when reproducing B.1 instead of expecting pure GPTQ to hit the deployment size target.
 
 Scope: pick the right PyTorch-side quantization toolchain for the
 **b1 route** (`bf16 SFT → quantize → optional MLX bridge`). Question

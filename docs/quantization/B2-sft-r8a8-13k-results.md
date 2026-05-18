@@ -1,8 +1,12 @@
 # SFT'd Gemma 4 E2B (r8-a8-nokl-step13000) — MLX quantization benchmarks
 
-## TLDR
+## TL;DR
 
-MLX quantization sweep on the under-trained r8-α8-nokl-step13000 SFT, evaluated on `plant_100.jsonl` (n=100, max-1-per-species). bf16 ceiling is only 40 % (vs 88.3 % on the data-aug-enwiki SFT), and every 4-bit variant drops 15-23 pp — far past the 5 pt band. EoRA does not recover quality on this under-trained checkpoint (M8a/M8b ≤ M2). Also documents the M8b-merge bug: the v1 inline merge corrupted RMS norm by going through bf16 round-trip; v2 is a dict-level merge that only touches the 945 affected safetensors entries.
+- This doc reports an MLX quantization sweep on the r8-alpha8 no-KL step-13000 SFT, a weaker checkpoint than the data-aug-enwiki model.
+- The bf16 ceiling is only 40 % on `plant_100.jsonl`, so this run mainly shows how quantization behaves when the source model is under-trained.
+- Every 4-bit variant drops 15-23 points from that low ceiling, far beyond the normal 5-point comfort band.
+- EoRA does not recover quality on this checkpoint, so readers should not generalize the successful M8b result without checking the source SFT quality.
+- The doc also records the M8b merge bug and fix: use the dict-level safetensors merge, not an inline model round-trip that rewrites unrelated tensors.
 
 > last edit: 2026-05-18 (morning — M8b-merge bug fixed, plant_100 eval set)
 >

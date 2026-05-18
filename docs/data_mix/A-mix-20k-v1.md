@@ -1,8 +1,11 @@
 # A — mix-20k v1 (historical: Cambrian blocker → LLaVA pivot)
 
-## TLDR
+## TL;DR
 
-Historical record of the v1 20K mix (Plant 45 / Cambrian 30 / smoltalk 15 / Negative 10). Shipped in 13 commits plus a 7-commit post-audit fix batch (test count 40 → 54). Blocked by a `tarfile.ReadError` on `nyu-visionx/Cambrian-10M` streaming, which forced the pivot to LLaVA-instruct-mix-vsft in v2. Also documents the dummy-gray-image trick used for text-only smoltalk records, since superseded.
+- The first 20K-row mix combined plant images, general vision data, text-only chat, and non-plant refusal examples.
+- The original general vision source failed during streaming, so the next version switched to a different image-instruction dataset.
+- Text-only examples initially used a shared gray placeholder image because the loader expected image-bearing batches.
+- A post-audit fix batch added missing tests and corrected determinism, image persistence, and plant-filtering issues.
 
 ## What v1 was meant to ship
 

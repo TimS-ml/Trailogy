@@ -1,8 +1,11 @@
 # 05c — data_mix roadmap
 
-## TLDR
+## TL;DR
 
-Strategic roadmap for the anti-overtraining mixed SFT corpus. Anti-overtraining is split into three independent levers: distribution diversity (this `src/data_mix/` module), KL+L2 regularizers, and a camera-state prefix gate. Tracks the v1 (20K) → v2 (50K/100K, LLaVA pivot) → v3 (task-tag dispatch + offline_qa persona bucket) → v4 (image-presence dispatch) evolution; v4 is production.
+- Plant-only fine-tuning made the model answer as if every prompt was a plant task, even for text questions or non-plant images.
+- The mixed corpus adds plant images, general vision examples, text-only chat, refusal examples, and offline persona QA so the model keeps broader behavior.
+- The final prompt design uses `[camera=on]` and `[camera=off]` to tell the model whether an image is present during both training and app use.
+- This document tracks how the mix changed from an early 20K version to the current 50K/100K production setup.
 
 > last edit: 2026-05-16
 

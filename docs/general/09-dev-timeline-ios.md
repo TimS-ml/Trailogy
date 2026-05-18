@@ -1,12 +1,11 @@
 # iOS App Development Timeline
 
-## TLDR
+## TL;DR
 
-16-day iOS sprint (May 2-17, 2026) across 8 phases: Kokoro TTS validation, Gemma integration with lazy-load/unload memory discipline, on-device STT, full UI + camera VLM, tour narration with interrupt/resume, prompt compression, RAG plumbing with MiniLM preload + scenePhase fixes, and Phase 7 rebrand to Trailogy with multi-subject RAG, offline image cache, and finetune fetch.
-
-Compressed timeline of the iOS-app work (May 2-17, 2026). Companion
-to [`08-dev-timeline-model.md`](08-dev-timeline-model.md) (model-side
-timeline, May 9-18).
+- The iOS app sprint progressed from text-to-speech validation to a complete offline trail-guide experience.
+- Early phases established the core loop: speech input, language-model response, and streamed speech output.
+- Later phases added camera input, tour narration, prompt compression, retrieval, lifecycle crash fixes, and offline assets.
+- The final phase aligned the app branding, trail UI, multi-subject retrieval, image caching, and finetuned model bundle.
 
 ## Overview
 

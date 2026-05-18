@@ -1,8 +1,12 @@
 # SFT'd Gemma 4 E2B — HF/CUDA quantization baselines
 
-## TLDR
+## TL;DR
 
-Per-variant HF/CUDA results table on the SFT'd Gemma 4 E2B. bf16 ceiling (R0) is 86.7 % PlantNet at n=300. Pure GPTQ (R1-R4) lands 80-84 % at ~7 GB — over the 4 GB iOS budget because `embed_tokens_per_layer` stays bf16. R6 (GPTQ Linears + torchao int4 `embed_tokens_per_layer` + audio strip) is the first sub-4 GB HF artifact: 3.41 GB / 83.7 %, matching MLX M2 within seed noise.
+- This doc reports the HF/CUDA quantization results for the SFT'd Gemma 4 E2B model.
+- The bf16 reference reaches 86.7 % PlantNet on n=300, while pure GPTQ variants land around 80-84 % but stay near 7 GB.
+- Pure GPTQ misses the iOS size budget because the large `embed_tokens_per_layer` table remains bf16.
+- The R6 hybrid, combining GPTQ Linears, torchao int4 embeddings, and audio stripping, is the first sub-4 GB HF artifact at 3.41 GB and 83.7 %.
+- Readers should use R6 as a CUDA/HF reference point, not as the final iOS packaging route.
 
 Per-variant detail for every HF/CUDA quantization we've run on our
 **SFT'd** Gemma 4 E2B. MLX-side variants (the actual deployable

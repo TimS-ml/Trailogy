@@ -1,8 +1,11 @@
 # Quantization roadmap — three routes, current priority, and why
 
-## TLDR
+## TL;DR
 
-Strategic route picker across three paths to a deployable 4-bit Gemma 4 E2B: A (4-bit SFT/QLoRA), B.1 (bf16 SFT → GPTQModel + torchao hybrid on CUDA), B.2 (bf16 SFT → MLX → mlx-lm quantize). Current decision: iOS deliverable ships from B.2 with M8b EoRA r=64 at 3.6 GB / 88.0 %. B.1 stays as the CUDA accuracy reference at 3.41 GB / 83.7 %.
+- This roadmap chooses between three quantization routes: 4-bit-aware SFT, CUDA/HF post-training quantization, and MLX-native post-training quantization.
+- The current iOS deliverable ships from the MLX-native route because M8b reaches 3.6 GB and 88.0 % PlantNet, within noise of the bf16 MLX reference.
+- The CUDA/HF hybrid route still matters as an independent reference: it reaches 3.41 GB and 83.7 %, validating the same size-quality region with different tooling.
+- Use this doc to decide which route to work on; use the route-specific result files for exact commands, variants, and caveats.
 
 > last edit: 2026-05-18 (B.1 hybrid PyTorch route landed at 3.41 GB /
 > 83.7 %; B.2 + EoRA closes gap to 88.0 % at 3.6 GB; MLX bridge no

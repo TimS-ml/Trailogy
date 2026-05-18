@@ -1,8 +1,11 @@
 # 03 — Anti-forgetting and the Final SFT Recipe
 
-## TLDR
+## TL;DR
 
-The shipped recipe: `r=8`, `alpha=8` (alpha/r=1.0), `lora_dropout=0.05`, projector tuned, no KL, no L2, 3 epochs on mix-50k at lr=3e-4. Result on a 300-sample PlantNet val slice: plant species match 0.000 -> 0.230, mmlu 0.460 -> 0.480, aime 0.100 -> 0.200. Of three anti-forgetting levers considered (KL, L2 weight anchor, camera-state prefix tag), only the camera-state prefix made it into production.
+- This doc explains how the finetune tried to add plant knowledge without making the model forget general assistant skills.
+- The recorded shipped recipe uses rank 8 LoRA, alpha 8, projector tuning, no KL penalty, no L2 anchor, and 3 epochs on a mixed dataset.
+- On a 300-sample PlantNet validation slice, species match rose from 0.000 to 0.230 while general benchmarks stayed at or above the base model.
+- Of the anti-forgetting ideas considered, the production recipe kept only the camera-state prompt tag; KL and L2 remained fallback designs.
 
 How we kept Gemma 4 E2B from forgetting how to be a general assistant
 while teaching it 782 plant species, and the small-rank recipe that

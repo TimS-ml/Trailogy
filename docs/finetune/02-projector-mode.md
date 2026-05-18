@@ -2,9 +2,12 @@
 
 # Finetune Pipeline — Projector + LoRA Mode
 
-## TLDR
+## TL;DR
 
-Opt-in mode that unfreezes Gemma 4's `embed_vision` projector (a single `RMSNorm + Linear`, ~1.18M params) as full params on top of the baseline LoRA pipeline. Full-param beats LoRA here because the projector is already small. This is the current production baseline-1 recipe (`r=256 + projector + data-aug-enwiki, 5 epochs`). Doc covers the five-step wiring in `finetune.py:real_train`, the PEFT `modules_to_save` mechanism, and the projector-aware freeze tripwire.
+- This doc explains an optional recipe that tunes the small vision-to-language projector in addition to the language LoRA adapter.
+- The projector has only about 1.18M parameters, so full-parameter tuning is simpler and more expressive than adding LoRA to that layer.
+- The recorded baseline-1 recipe uses rank 256 LoRA plus projector tuning for 5 epochs on enriched plant data.
+- The conclusion is that projector tuning is a practical default when adapting image understanding without changing the larger vision encoder.
 
 Adds full-param fine-tuning of Gemma 4's `embed_vision` projector on
 top of the baseline LoRA pipeline. **This is the current production

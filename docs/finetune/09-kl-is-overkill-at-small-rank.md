@@ -1,8 +1,11 @@
 # 09 — KL is overkill on small-rank LoRA; it actively blocks plant learning
 
-## TLDR
+## TL;DR
 
-Empirical KL-rank sweep shows KL regularization actively blocks plant learning at small rank: with KL=0.05 every rank from r=4 to r=32 stays at plant=0.000 (KL pulls logits back toward base, which never names species). KL=0 with alpha/r=1.0 at r=8 is SOTA (plant=0.23, mmlu=0.48 above base). At r=256 with KL=0.05, mmlu collapses to 0.10 — token-level KL cannot anchor a high-dim weight shift. Real anti-forgetting comes from the data mix, not KL.
+- This doc tests whether KL regularization helps a small-rank LoRA model learn plant species while preserving general ability.
+- The sweep found that KL blocked plant learning at small rank: with KL 0.05, ranks 4 through 32 stayed at 0.000 plant match.
+- The best recorded small-rank recipe in this doc used rank 8, alpha/r 1.0, and no KL, reaching 0.23 plant match while staying above the base MMLU score.
+- The conclusion is that data mix and conservative adapter settings did more for anti-forgetting than KL on this task.
 
 ## 1. KL Strength vs the (plant, mmlu) Dual Indicator
 

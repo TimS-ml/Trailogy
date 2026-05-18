@@ -1,8 +1,11 @@
 # Gemma 4 E2B — Quantization Overview
 
-## TLDR
+## TL;DR
 
-Entry-point doc for the Gemma 4 E2B quantization sweep. Target is a ≤4 GB iOS-loadable artifact from a 9.54 GB bf16 SFT merge. Recommended ship: M8b (MLX affine 4-bit g64 + EoRA r=64) at 3.6 GB / 88.0 % PlantNet (−0.3 pp vs bf16, within n=300 noise). B.1 hybrid GPTQModel+torchao on CUDA cross-validates at 3.41 GB / 83.7 %.
+- This is the entry point for the Gemma 4 E2B quantization sweep, where the target is an iOS-loadable artifact at or below 4 GB from a 9.54 GB bf16 SFT merge.
+- The recommended deploy candidate is M8b: MLX affine 4-bit g64 plus EoRA r=64, landing at 3.6 GB and 88.0 % PlantNet on the n=300 quick test.
+- M8b is effectively tied with the MLX bf16 reference at 88.3 %, so readers should treat it as the current ship candidate rather than just a compression demo.
+- The CUDA/HF hybrid route cross-checks the tradeoff at 3.41 GB and 83.7 %, but it is not the iOS deployment format.
 
 One-page summary of the quantization sweep on the SFT'd Gemma 4 E2B.
 Per-method numbers and reproduction recipes live in the per-route

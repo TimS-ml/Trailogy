@@ -1,8 +1,11 @@
 # Gemma 4 E2B Finetune — Pipeline & Experiment Reports
 
-## TLDR
+## TL;DR
 
-Index for the Gemma 4 E2B bf16 finetune docs on PlantNet-300K. Starts with the end-to-end pipeline (`01`), the shipped canonical recipe with anti-forgetting (`03`), and the two opt-in tuning modes (`02` projector, `03-vision`). Decision and exploration notes follow: investigation of an outside tuner (`04`), the sweep plan (`05`), bnb-vs-torchao SFT (`06`), anti-forgetting deep-dive (`07`), the S_step framework (`08`), why KL hurts at small rank (`09`), and the late no-text-prefix + r=16 ablation (`10`).
+- This folder documents a finetuning effort that teaches a multimodal Gemma 4 model to identify plants while preserving general assistant behavior.
+- Start with the pipeline and final-recipe docs to understand the end-to-end training flow, then read the projector and vision-mode notes for optional model changes.
+- The experiment notes explain why the recipe favors bf16 supervised finetuning, frozen vision/audio towers, projector tuning, small-rank LoRA, and no KL penalty.
+- Later ablations show that removing the text-only camera prefix and moving to rank 16 produced the strongest recorded recipe.
 
 Engineering notes and experiment reports for the Gemma 4 E2B bf16
 finetune on PlantNet-300K.

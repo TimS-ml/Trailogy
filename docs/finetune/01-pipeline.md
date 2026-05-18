@@ -2,9 +2,12 @@
 
 # Finetune Pipeline — Baseline (LoRA-only) Mode
 
-## TLDR
+## TL;DR
 
-End-to-end recipe for turning a stock multimodal Gemma 4 E2B checkpoint plus PlantNet-300K into a bf16 LoRA adapter that merges and re-quantizes into the same INT4 MLX shape the iOS app ships. Covers data prep (pre-stretched 960x672 JPEGs), unsloth + trl SFT training, PEFT merge, and `mlx_vlm.convert -q --q-bits 4`. Documents the LoRA-only baseline mode with both vision and audio towers frozen, and three silent-failure tripwires (wrong loader drops `vision_tower.*`, wrong MLX convert drops vision, missing 960x672 processor patch).
+- This doc records the baseline training pipeline for adapting a stock multimodal Gemma 4 model to PlantNet plant identification.
+- The recipe prepares fixed-size plant images, trains a bf16 LoRA adapter, merges it back into the base model, and converts the result for MLX INT4 deployment.
+- The baseline keeps the vision tower, audio tower, and vision projector frozen so the experiment isolates language-side LoRA behavior.
+- The main takeaway is to guard against silent export failures: use a multimodal loader, use the VLM converter, and preserve the trained image size in the processor config.
 
 How `src/finetune/` turns a stock multimodal Gemma 4 E2B
 checkpoint and a stack of PlantNet-300K plant photos into a LoRA

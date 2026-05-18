@@ -1,15 +1,11 @@
 # general/ — cross-cutting docs
 
-## TLDR
+## TL;DR
 
-Index of cross-cutting Trailogy docs: architecture, iOS runtime, eval setup, parity audits, package bugs, postmortems, and final model eval.
-
-Architecture, dev timeline, runtime patterns, eval setup, and known-bug
-postmortems that don't belong to a single module
-(`data_mix/` / `finetune/` / `quantization/`).
-
-These docs support the Trailogy writeup. Each writeup section has a
-corresponding link target below.
+- This directory collects cross-cutting documentation for architecture, runtime behavior, evaluation, package bugs, postmortems, and final model results.
+- The reading-order table maps each writeup section to the supporting technical notes.
+- Evaluation numbers across docs can drift because sample counts, datasets, prompts, and loaders changed during development.
+- The docs are organized by architecture, iOS runtime patterns, development timelines, eval parity audits, debugging notes, and the final shipped-model evaluation.
 
 ## Reading order tied to the writeup
 

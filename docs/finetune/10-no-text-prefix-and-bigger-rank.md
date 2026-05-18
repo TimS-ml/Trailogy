@@ -1,8 +1,11 @@
 # 10 — Dropping `[camera=off]` on text data + bumping rank to 16: new composite SOTA
 
-## TLDR
+## TL;DR
 
-Two ablations beat the docs/09 SOTA: removing the text-only `[camera=off]` prefix improves the r8 recipe, and r16/a16 with no text prefix reaches the new best composite score (0.415 at step 20000). New production candidate: `r16-a16-nokl-no-text-prefix` with plant=0.42, mmlu=0.54, aime=0.20. The `mixc` data variant is a negative result.
+- This doc records late ablations that improved on the earlier small-rank no-KL recipe.
+- Removing the text-only camera prefix helped the rank 8 recipe without hurting general benchmarks.
+- Increasing to rank 16 with alpha/r kept at 1.0 produced the best recorded composite score in this note: 0.415 at step 20000.
+- The current takeaway is to prefer `r16-a16-nokl-no-text-prefix` as the new production candidate, while treating the alternate `mixc` data variant as a negative result.
 
 > last edit: 2026-05-18 evening (MacBook M5 Pro eval patch)
 

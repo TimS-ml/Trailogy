@@ -1,8 +1,12 @@
 # B — mix-50k v2 (current production canonical) + mix-100k sibling
 
-## TLDR
+## TL;DR
 
-Current production canonical: 50,038-row mix (Plant ~44% / LLaVA 30% / smoltalk 15% / Negative 10% + 38 offline_qa persona records). Landed in commit `f6d0c1f` with four simultaneous changes vs v1: Cambrian → LLaVA (parquet-backed), 50K+100K sizes, per-source multi-val splits with full checkpoint retention, and native `image=None` for text-only smoltalk. A `mix-100k.yaml` sibling doubles per-bucket sizes for larger-compute runs.
+- The current 50K-row mix contains about 44% plant examples, 30% general image examples, 15% text-only chat, and 10% refusal examples.
+- This version replaced the blocked general vision source with a dataset format that streams reliably.
+- Text-only records are handled with `image: null`, so they no longer need fake placeholder images.
+- Separate validation files and retained checkpoints make it easier to notice if one behavior improves while another gets worse.
+- A 100K-row sibling config keeps the same bucket idea for larger training runs.
 
 ## What this is
 

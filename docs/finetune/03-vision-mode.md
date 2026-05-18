@@ -2,9 +2,12 @@
 
 # Finetune Pipeline — Projector + LoRA + Vision-Tower Last-N Mode
 
-## TLDR
+## TL;DR
 
-Opt-in mode that stacks on projector mode: unfreezes the last N transformer blocks of Gemma 4's SigLIP vision tower as full params via PEFT `modules_to_save`. For N=2 on the 16-layer encoder, ~14M extra trainable params. Works correctly after the PEFT orphan-tensor package fix, but projector-only still wins (100% vs 96% species match on overfit100). Treated as a default-negative probe at production scale; SigLIP is fragile to both training drift and PTQ.
+- This doc tests whether tuning the last few vision-encoder layers helps plant identification beyond projector tuning.
+- The experiment unfreezes the final N vision blocks as full parameters; with N=2, that adds about 14M trainable parameters.
+- After package fixes, the mode trains and saves correctly, but projector-only still did better on the overfit test: 100% vs 96% species match.
+- The takeaway is to treat vision-tower tuning as a risky probe, because the vision encoder appears sensitive to both training drift and later quantization.
 
 Adds full-param fine-tuning of the **last N transformer blocks** of
 the SigLIP vision encoder on top of the projector + LoRA pipeline.
@@ -334,4 +337,3 @@ or linear probing) would be prudent.
 | Vision-layer export tripwire tests | `src/finetune/tests/test_export_vision_layer_tripwire.py` |
 | Vision-layer save-tripwire tests | `src/finetune/tests/test_finetune_save_tripwire.py` |
 | Pre/post-train trainable-set check tests | `src/finetune/tests/test_finetune_trainable_set_check.py` |
-

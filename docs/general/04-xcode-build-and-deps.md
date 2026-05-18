@@ -1,13 +1,11 @@
 # Xcode Build Pipeline & Dependency Resolution
 
-## TLDR
+## TL;DR
 
-How Xcode propagates source/model/dep changes to the iPhone, plus the SPM conflict resolution for the vendored Kokoro + MLX stack. Key invariants: `Resources/Models/` is a blue-folder ref (recursive, no excludes, no symlinks on iOS); vendored `kokoro-ios`/`MisakiSwift`/`MLXUtilsLibrary` have relaxed MLX pins so `mlx-swift-lm 3.x` can coexist with KokoroSwift 1.0.11.
-
-How the iOS build picks up source / model / dependency changes, plus
-the SPM dependency conflict resolution for the vendored Kokoro / MLX
-stack. Combines the two sides of "why does this iOS build fail" into
-one doc.
+- Xcode can show stale behavior if generated project files, build artifacts, or the installed app sandbox are out of sync.
+- The model resource directory is copied recursively into the app bundle, so every file under it ships to the device.
+- iOS bundles must use real model directories rather than symlinks because signing and resource lookup can fail otherwise.
+- Several Swift packages are vendored with relaxed dependency pins so the speech and language-model stacks can resolve together.
 
 ## Part 1 — Xcode build & model refresh
 

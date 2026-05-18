@@ -1,8 +1,11 @@
 # `mattmireles/gemma-tuner-multimodal` — investigation findings
 
-## TLDR
+## TL;DR
 
-Investigation of `mattmireles/gemma-tuner-multimodal` as a potential reference for quantization code. Conclusion: no quantization code in the repo (only false-positive matches on "quantitative" / "quantify" in profiler comments). Repo is a PEFT/LoRA tuner with Apple-Silicon MPS support, GCS/BigQuery streaming, and a live training visualizer — useful as UX inspiration only, not a source for quantization implementations. Decision: do not adopt.
+- This doc investigates whether an external multimodal Gemma tuner could provide useful quantization code.
+- The search found no weight-quantization implementation; matches for "quant" were only ordinary uses of words like "quantitative".
+- The repo may still be useful as inspiration for training UX, streaming data, or Apple Silicon support.
+- The conclusion is not to adopt it as a dependency or template for quantization work.
 
 ## Investigation Summary
 

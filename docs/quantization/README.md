@@ -1,8 +1,11 @@
 # Gemma 4 E2B — Quantization Experiments
 
-## TLDR
+## TL;DR
 
-Index for the Gemma 4 E2B deploy-time quantization docs. Goal: produce an SFT'd 4-bit checkpoint under 4 GB (target 3.0-3.6 GB) with minimal PlantNet accuracy loss. Three routes (A: 4-bit SFT; B.1: HF/CUDA hybrid; B.2: MLX-native) covered across 14 files; B.2 ships the iOS artifact, B.1 cross-validates on CUDA. Start with `00-quantization-report-pub.md` for headline results.
+- This folder is the public index for Gemma 4 E2B deploy-time quantization: the goal is an SFT'd 4-bit checkpoint under 4 GB with minimal PlantNet accuracy loss.
+- The docs compare three routes: 4-bit-aware SFT, a CUDA/HF post-training path, and an MLX-native path that can produce the iOS artifact.
+- The current recommended artifact comes from the MLX-native route; the CUDA/HF route remains useful as an independent accuracy and size cross-check.
+- Start with `00-quantization-report-pub.md` for headline results, then use the route-specific files for reproduction details and failure analysis.
 
 Engineering notes for the deploy-time quantization sweep. Companion to
 the code in `src/quantization/`. The goal: produce a quantized SFT'd

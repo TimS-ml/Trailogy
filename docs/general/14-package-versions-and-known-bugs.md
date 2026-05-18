@@ -1,18 +1,11 @@
 # Tested Package Versions & Known Bugs in the Stack
 
-## TLDR
+## TL;DR
 
-Tested package combo (captured 2026-05-13): Torch 2.10+cu130, transformers 5.8.0, peft 0.19.1, trl 1.4.0, unsloth 2026.5.2, gptqmodel 7.0.0, mlx 0.31.2 (Mac) / 0.32.0.dev from source (Linux+NVIDIA). Required reading before upgrades. Documents known bugs including the transformers 5.5->5.8 silent PEFT-loading regression and the peft + gptqmodel AWQ dispatcher patch.
-
-Snapshot of the package combination the SFT + quantization pipeline
-has been exercised against end-to-end, plus the bugs in the upstream
-stack we've had to work around. Required reading before any package
-upgrade.
-
-This doc supports the Trailogy writeup's **Technical Challenge #1
-(Silent PEFT loading failure)**: that bug is one entry in the
-"Known bugs" table below; the resolution sequence is in the
-"Upgrade order" section.
+- This document records the package versions that were exercised end-to-end for supervised fine-tuning and quantization.
+- Package upgrades are risky because several upstream libraries had silent or version-specific failures in this stack.
+- The most important bug was an adapter reload mismatch that silently dropped trained LoRA tensors after a model-layout change.
+- Other notes cover quantization dispatch issues, MLX backend problems, and the upgrade order needed to avoid known traps.
 
 ## Tested package combination
 

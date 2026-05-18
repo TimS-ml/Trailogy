@@ -1,12 +1,17 @@
 # Docs
 
-## TLDR
+## TL;DR
 
-Engineering notes and experiment reports for the Trailogy model
-pipeline. Four folders mirror `src/` (`data_mix`, `finetune`,
-`quantization`) plus a cross-cutting `general/` (architecture,
-timelines, eval, postmortems). The "Reading order" section below is
-the shortest path to "what shipped and why".
+- These docs explain how Trailogy's on-device Gemma 4 model was trained,
+  evaluated, quantized, and shipped into the iOS app.
+- `data_mix/`, `finetune/`, and `quantization/` mirror the three model
+  workstreams: dataset construction, SFT experiments, and deploy-time
+  compression.
+- `general/` holds cross-cutting notes: architecture, iOS runtime,
+  memory management, eval caveats, package bugs, postmortems, and final
+  results.
+- Start with the reading order below if you want the shortest path to
+  "what shipped and why".
 
 Engineering notes and experiment reports. The per-module docs mirror
 the code under `src/`; `general/` carries cross-cutting docs

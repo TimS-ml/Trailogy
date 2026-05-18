@@ -1,8 +1,11 @@
 # MLX stack design — mlx-vlm is the substrate; mlx-lm only contributes (buggy) quant cores
 
-## TLDR
+## TL;DR
 
-Mental model for the MLX stack: mlx-vlm is the only iOS-loadable deploy substrate, mlx-lm's Gemma 4 model class is broken on four points (RMSNorm, projection layers, KV-shared K/V, audio) and must never be used for forward passes. The "hybrid flow" (load with mlx-vlm, quantize with mlx-lm `*_quantize` cores, save with mlx-vlm) is the correct pipeline, but each mlx-lm quant core has Gemma 4-specific bugs today.
+- This doc gives the MLX mental model: deployable Gemma 4 artifacts must be in mlx-vlm format because that is what the iOS runtime matches.
+- Do not use mlx-lm's Gemma 4 model class for forward passes; it diverges from the deploy model on RMSNorm, projection layers, KV-shared K/V, and audio handling.
+- mlx-lm quantization cores can still be reused if the model is loaded and saved through mlx-vlm, preserving the correct model tree.
+- Treat mlx-lm's GPTQ, AWQ, DWQ, and dynamic-quant methods as research paths because each has Gemma 4-specific bugs or validation gaps in this stack.
 
 ## Deploy Format Rules
 

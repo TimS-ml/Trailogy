@@ -1,8 +1,11 @@
 # 08 — LR, LoRA-scale, batch: per-step adapter update magnitude is the catastrophic-forgetting knob
 
-## TLDR
+## TL;DR
 
-Defines `S_step ~= (alpha/r) * lr * eff_bs` as a useful lower-bound proxy for per-step adapter update magnitude, but later audits show it is not a single-variable explanation: runs with the same `S_step=0.0064` range from mmlu=0.10 to 0.62. The revised hypothesis couples alpha/r, rank, and cumulative steps; the safer r8-a8-nokl recipe uses alpha/r=1.0, lr=3e-4, eff_bs=32, no KL.
+- This doc investigates why some LoRA finetunes preserve general ability while others drift or collapse.
+- It introduces `S_step ~= (alpha/r) * lr * effective_batch_size` as a rough proxy for how hard each optimizer step pushes the adapter.
+- Later audits show `S_step` is useful but incomplete: runs with the same proxy value can still produce very different general-benchmark scores.
+- The takeaway is to reason jointly about LoRA scale, rank, learning rate, batch size, and total steps rather than relying on one scalar.
 
 ## Original Hypothesis
 

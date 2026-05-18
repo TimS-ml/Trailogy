@@ -1,8 +1,11 @@
 # Why bnb NF4 is catastrophic on our SFT'd model
 
-## TLDR
+## TL;DR
 
-bnb NF4 collapses PlantNet from 70.6 % to 0.1 % while WikiText PPL only rises 1.42×, so the LM is fine but visual recognition is destroyed. A three-arm skip-list ablation (`skip_ev` / `skip_vt` / `skip_both` at n=300) isolates the SigLIP vision_tower as the sole culprit: keeping it bf16 recovers 67-69 % regardless of whether `embed_vision` is NF4'd. Rule: never quantize `vision_tower`.
+- This doc is the failure case showing why bnb NF4 should not be applied blindly to the multimodal model.
+- PlantNet accuracy fell from 70.6 % to 0.1 % while WikiText perplexity rose only 1.42x, indicating the language model survived but visual recognition broke.
+- A three-arm skip-list ablation isolated the SigLIP `vision_tower` as the culprit: keeping it bf16 recovered roughly 67-69 % accuracy.
+- The practical rule is simple: never quantize `vision_tower`; other modules can be tested, but the vision encoder must stay bf16.
 
 ## Vision Collapse Summary
 

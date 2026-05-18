@@ -1,19 +1,12 @@
 # Model-Side Development Timeline (SFT · Data Mixture · Quantization)
 
-## TLDR
+## TL;DR
 
-10-day timeline (May 9-18, 2026) across three parallel tracks: Track A data mixture (4-bucket -> LLaVA -> offline_qa -> v4 50k), Track B SFT (baseline LoRA -> ModalityAware sampler -> anti-forgetting KL+L2 -> cloud sweeps), Track C quantization (PTQ framework -> hybrid CUDA/MLX -> EoRA training-free recovery). Hardware: 4090 desktop, A100 pair, H100/H200 cloud, Apple Silicon.
-
-Compressed timeline of the model pipeline work (May 9-18). Companion
-to [`09-dev-timeline-ios.md`](09-dev-timeline-ios.md) (iOS-app
-timeline, May 2-17).
-
-> **Benchmark drift caveat**: numbers across phases were produced
-> under different `n`, val pool, prefix scheme, and loader backend.
-> See [`10-eval-setup.md`](10-eval-setup.md) for the full caveat and
-> [`15-postmortems.md`](15-postmortems.md) §4 for the val/test
-> distribution gap. Do not aggregate numbers across phases without
-> re-running under one invocation.
+- The model work ran as a short sprint across data mixture, supervised fine-tuning, and quantization tracks.
+- Data mixture evolved from a plant-focused set into broader multimodal and offline-answering mixtures.
+- Fine-tuning added sampler, prefix, and anti-forgetting changes to improve plant knowledge without collapsing general behavior.
+- Quantization moved from research baselines to deployable MLX artifacts and post-quantization recovery experiments.
+- Numbers from different phases are not directly comparable unless they are rerun under the same evaluator settings.
 
 ## Overview
 

@@ -1,12 +1,11 @@
 # Evaluation Pipeline — `finetune/src/evaluate.py` + `quantization/src/eval/`
 
-## TLDR
+## TL;DR
 
-What the eval driver computes and why cross-phase numbers are NOT apples-to-apples: `n` drifted 200->300->2870, val pool changed across data-mix versions, prefix scheme moved from source-keyed v3 `[task=*]` to modality-keyed v4 `[camera=on/off]`, and loader backends span hf_bf16/gptq/bnb-nf4/mlx_vlm/mlx_lm. Three shared metrics: `species_match` (strict), `rouge_l` (soft), and Qwen2.5-VL-72B LLM-as-judge. Default n=300, seed=0, 12-prompt paraphrase pack.
-
-What the eval driver actually does, what metrics it computes, what the
-default PlantNet subset looks like, and — importantly — why numbers
-from different phases of the project are not directly comparable.
+- The evaluation driver measures plant identification with strict species matching, soft text overlap, and optional LLM-as-judge scoring.
+- Cross-phase numbers are not automatically comparable because sample counts, validation pools, prompt prefixes, and loaders changed over time.
+- The default PlantNet slice uses a deterministic seed and multiple paraphrased prompts so results are less tied to one wording.
+- Readers should check each result's sample set, loader backend, and phase before comparing it with another number.
 
 ## ⚠️ Benchmark drift across phases (read this first)
 

@@ -1,17 +1,11 @@
 # iOS App Architecture (Trailogy)
 
-## TLDR
+## TL;DR
 
-Architecture of the Trailogy iOS app: an offline trail guide running Gemma 4 E2B INT4 (LLM/VLM), Kokoro 82M (TTS), SFSpeechRecognizer (STT), and MiniLM-L6-v2 (RAG) on-device, no network at runtime. Total ~3.4 GB installed. SwiftUI views call services owned by `ContentView`; `WalkingView` is the only view driving ML inference.
-
-Architecture overview for the iOS app side of Trailogy. For the
-model-side pipeline (consumer of which is this app's `Models/Gemma/`),
-see [`01-architecture-model-pipeline.md`](01-architecture-model-pipeline.md).
-
-> Repo identity: display name **Trailogy**; the Xcode target / bundle
-> id / source directory stay `HikeCompanion` internally to avoid
-> provisioning churn — the rename was a single `CFBundleDisplayName`
-> change.
+- Trailogy is an offline iOS trail guide that runs language, vision, speech, and retrieval models on the device with no runtime network dependency.
+- SwiftUI views call long-lived services owned by the root view, and only the walking experience drives model inference.
+- The app bundle includes the model files, trail content, retrieval corpus, and image assets needed for normal use.
+- The public app name is Trailogy, while some internal target and source names remain unchanged to avoid provisioning churn.
 
 ## Product summary
 

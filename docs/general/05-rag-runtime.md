@@ -1,18 +1,11 @@
 # RAG Runtime — On-Device Retrieval Path
 
-## TLDR
+## TL;DR
 
-On-device RAG: bundled MiniLM-L6-v2 (~87 MB resident) + 4 pre-embedded subject corpora (geology/plants/physics/english, ~200 KB / 91 chunks total). Multi-subject active set per trail with DebugView override; top-k chunks injected one-shot into Gemma's user prompt and cleared after stream. Stays loaded across Gemma load/unload cycles without ever competing with the LLM.
-
-Semantic retrieval against four pre-embedded subject corpora,
-multi-subject active set per trail with runtime override, top-k chunks
-injected into Gemma's user prompt one-shot.
-
-Companion to [`06-scenephase-metal-background.md`](06-scenephase-metal-background.md)
-(the preload + Kokoro scenePhase fixes that made the path
-backgrounding-safe), [`02-architecture-ios-app.md`](02-architecture-ios-app.md)
-(architecture context), and [`03-memory-management.md`](03-memory-management.md)
-(retrieval memory math).
+- Retrieval runs fully on-device using a bundled sentence embedder and small pre-embedded subject corpora.
+- Each trail activates one or more subject areas, and a debug override can change that active set at runtime.
+- For each question, the top retrieved chunks are inserted once into the language-model prompt and cleared after generation.
+- The retrieval embedder stays loaded across language-model unloads because it is small enough not to compete for memory.
 
 ## Design summary
 

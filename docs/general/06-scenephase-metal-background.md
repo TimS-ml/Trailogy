@@ -1,18 +1,11 @@
 # scenePhase × Metal — Background-Execution Crash Fix
 
-## TLDR
+## TL;DR
 
-iOS forbids Metal command-buffer submission from backgrounded apps; MLX's C++ runtime raises `std::runtime_error`, which Swift cannot catch, so any GPU submit after foreground->background terminates the process. Two fixes: gate MiniLM preload with `.task(id: scenePhase)` against `.active`, and abort Kokoro's chunked synth loop on phase change. Gemma streaming remains a residual risk.
-
-Two crashes hit during Phase 6 PoC testing, both rooted in the same
-iOS rule: **Metal command buffers cannot be submitted from a
-backgrounded app.** MLX's C++ runtime guards this with
-`std::runtime_error`, which Swift **cannot catch** — so any GPU
-submission during/after the foreground → background transition
-terminates the process.
-
-Both fixes use SwiftUI `scenePhase` as the trigger, but in two
-different ways that are worth distinguishing.
+- iOS rejects Metal GPU work from backgrounded apps, and the MLX runtime failure cannot be caught safely from Swift.
+- MiniLM preload is gated on the app being active so startup or prewarming cannot submit GPU work too early.
+- Kokoro speech synthesis stops its chunk loop when the scene phase changes, preventing background GPU submissions mid-playback.
+- Language-model streaming still carries residual backgrounding risk because generation can be interrupted by app lifecycle changes.
 
 ## The crash signature
 

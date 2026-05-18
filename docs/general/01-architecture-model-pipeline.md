@@ -1,17 +1,11 @@
 # Model-Side Architecture Overview
 
-## TLDR
+## TL;DR
 
-End-to-end pipeline turning stock `unsloth/gemma-4-E2B-it` into an SFT'd, quantized checkpoint that ships under iOS's ~4 GB jetsam ceiling while keeping >=46% MMLU and >=60% PlantNet match. Three parallel tracks (`data_mix/`, `finetune/`, `quantization/`) share one eval surface and land the artifact in the iOS bundle's `Models/Gemma/`.
-
-End-to-end model pipeline that turns stock `unsloth/gemma-4-E2B-it`
-into an SFT'd, data-mixed, deploy-quantized checkpoint that ships
-inside the Trailogy iOS bundle under the ~4 GB jetsam ceiling, retains
-≥ 46 % MMLU (no catastrophic forgetting), and answers
-PlantNet-style plant-ID questions at ≥ 60 % match.
-
-For the iOS-side architecture (consumer of this pipeline's deploy
-artifact), see [`02-architecture-ios-app.md`](02-architecture-ios-app.md).
+- The model pipeline turns a stock Gemma 4 E2B checkpoint into a supervised-finetuned, quantized artifact for the iOS app bundle.
+- Data mixture, fine-tuning, and quantization run as separate workstreams but share one evaluation surface.
+- The deploy target is a small on-device model bundle that stays under mobile memory limits while preserving general reasoning and plant-identification quality.
+- The iOS app consumes the final artifact from its bundled `Models/Gemma/` directory.
 
 ## Three modules
 

@@ -1,19 +1,12 @@
 # 16 — Final Model Eval (production candidates)
 
-## TLDR
+## TL;DR
 
-Final eval across 4 production candidates on MLX 4-bit g64 (M5 Pro). Shipped model is `r8-a8-nokl + NA-tree stage-2 step 11k`: 31.0% plant_300, 50.0% mmlu_50, 15.0% aime_20, 100% refusal, 34.0% NA-tree (vs 0% for all stage-1 candidates). Chose the product-aligned model over the leaderboard winner (r16 step 20k, composite ~0.40) because correctly naming trees hikers actually see beats +6 pp on global PlantNet.
-
-> last edit: 2026-05-18
->
-> All numbers below come from one evaluator —
-> `evaluate_generality.py --loader mlx_vlm` on Apple Silicon (M5 Pro),
-> MLX 4-bit g64 weights. PlantNet slice: 300 samples, 138 species,
-> seed=42. NA-tree slice: 100 samples, 9 species, substring match.
->
-> Read [`10-eval-setup.md`](10-eval-setup.md) first for what the
-> metrics actually compute and why cross-phase numbers are not always
-> apples-to-apples.
+- The final evaluation compared four production candidates using the same MLX 4-bit evaluator and fixed test slices.
+- The shipped model is a stage-2 tree-specialized adapter on top of the selected stage-1 checkpoint.
+- The stage-2 model gives up some global PlantNet accuracy but gains meaningful performance on North American tree species.
+- The product decision favored recognizing trees hikers are likely to see over the highest aggregate leaderboard-style score.
+- Cross-phase comparisons still require care because other docs may use different evaluators, sample counts, or datasets.
 
 ## Why there is an NA-tree stage-2 SFT at all
 

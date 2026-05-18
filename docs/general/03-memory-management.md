@@ -1,16 +1,11 @@
 # Memory Management & iPhone Optimizations
 
-## TLDR
+## TL;DR
 
-iOS memory discipline under iPhone's ~5-6 GB jetsam threshold. Two rules: Gemma and Kokoro never coexist (load-per-use, unload before hand-off); MiniLM (~87 MB) stays resident. Trades 10-30s per-Ask reload latency for memory safety. Idle baseline is ~100 MB; text Ask peaks around ~3.0 GB, while VLM prefill can peak around ~3.85 GB.
-
-iOS on-device memory discipline + the quantization memory math that
-dictates the deploy artifact size.
-
-Companion to [`02-architecture-ios-app.md`](02-architecture-ios-app.md)
-(architecture overview), [`06-scenephase-metal-background.md`](06-scenephase-metal-background.md)
-(C++/Swift Metal-backgrounding pattern), and [`05-rag-runtime.md`](05-rag-runtime.md)
-(RAG retrieval details).
+- The app trades reload latency for memory safety by loading the language model only when needed and unloading it before speech synthesis starts.
+- The language model and text-to-speech model are never allowed to coexist in memory because their combined peaks leave too little mobile headroom.
+- The small retrieval embedder stays resident because its memory cost is minor compared with the main model.
+- Quantization and bundle-size choices are driven by the same memory budget that governs runtime loading and unloading.
 
 ## Design philosophy
 

@@ -1,8 +1,11 @@
 # MLX ↔ PyTorch / HF transformers conversion — what we learned
 
-## TLDR
+## TL;DR
 
-The standard "PEFT merge → `mlx_vlm.convert`" recipe is silently broken on `transformers ≥ 5.8`: KV-shared layers 15-34 no longer allocate `k_proj`/`v_proj`/`k_norm`/`v_norm` as `nn.Parameter`, so `save_pretrained` drops them, and `mlx_vlm.convert` 0.4.3's strict loader errors with `Missing N parameters`. Fix is a safetensors-level merge that preserves the dead KV tensors byte-for-byte.
+- This doc explains why a normal PEFT merge followed by `mlx_vlm.convert` can fail when moving Gemma 4 between PyTorch/HF and MLX.
+- In `transformers >= 5.8`, KV-shared layers no longer register some K/V tensors as parameters, so `save_pretrained` silently omits tensors that MLX still expects.
+- The failure appears later as a strict `mlx_vlm.convert` missing-parameter error, which can obscure the real cause.
+- The safe route is a safetensors-level merge that preserves the inactive KV tensors byte-for-byte before conversion.
 
 ## Compatibility Summary
 

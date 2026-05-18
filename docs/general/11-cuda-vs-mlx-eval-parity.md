@@ -1,25 +1,11 @@
 # Linux mlx-cuda vs Mac mlx-metal as Eval Backends
 
-## TLDR
+## TL;DR
 
-pypi `mlx-cuda-12==0.31.1` is missing QMM kernel fixes and produces ~7.7% on Gemma 4 INT4 vs Mac mlx-metal 0.31.2 at 49.7% (100% pad-spam after ~10 tokens). Building mlx `main` HEAD from source (0.32.0.dev) recovers to ~40.6% with ~48% residual pad-spam. Linux aggregates are tight (+/-0.33 pp across 3 runs) so sweeps compare safely, but per-sample analysis is unreliable; the Mac->Linux gap is mostly residual pad-spam, not kernel arithmetic.
-
-A reference for anyone running `quantization/scripts/run/eval.py` on a
-Linux + NVIDIA box and wondering how the numbers compare to the
-authoritative Mac eval. Captures four things:
-
-1. **The bug** — why `mlx-cuda-12==0.31.1` (the latest pypi wheel for
-   Linux + NVIDIA at the time of writing) silently produces ~7 %
-   accuracy on Gemma 4 INT4 when Mac mlx-metal gets ~50 %.
-2. **The fix** — build mlx `main` HEAD from source, with the exact
-   environment recipe you need.
-3. **The empirical numerical contract** — what's deterministic across
-   runs, what's not, and how to read a Linux-vs-Mac accuracy gap.
-   Backed by three back-to-back n=300 Linux runs.
-4. **Caveat** — the source build only **partially** fixes the QMM
-   bug. ~48 % of responses still pad-spam, mostly on different samples
-   each run. The Mac→Linux gap is dominated by pad-spam, not by
-   clean-output kernel arithmetic differences.
+- The published Linux CUDA MLX wheel tested here produced severely broken Gemma 4 INT4 generations due to missing quantized-matmul fixes.
+- Building MLX from source recovered most aggregate accuracy but still left substantial stochastic pad-token degeneration.
+- Linux aggregate sweep comparisons were stable across repeated runs, but per-sample analysis remained unreliable.
+- The remaining Mac-versus-Linux gap was mostly caused by degenerate outputs, not clean arithmetic differences on valid responses.
 
 ## Backend Comparison
 

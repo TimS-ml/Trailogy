@@ -1,17 +1,11 @@
 # Postmortems
 
-## TLDR
+## TL;DR
 
-Dated debugging rollups from the May 2026 sprint, each capturing symptom, root cause, fix, and tripwire. Headline entry: the transformers 5.5->5.8 silent PEFT-loading bug that made adapters look converged (loss ~1e-4) but eval at 0% because PEFT silently dropped 80 of 490 LoRA tensors on reload. Plus adamw_8bit dispatcher leakage, train/eval parity bugs, and other class-of-bug tripwires now in CI.
-
-Concise rollup of dated debugging sessions from the May 2026 sprint.
-Each entry: **what fired, root cause, fix, lesson**. Originals are
-longer; this doc keeps only the results and the tripwires that catch
-the same class of bug next time.
-
-Reading order roughly matches the order in which we hit the bugs.
-
----
+- Each postmortem records the symptom, root cause, fix, and tripwire for a bug found during the sprint.
+- The headline failure was an adapter that appeared trained in memory but lost many LoRA tensors after save and reload.
+- Several bugs were caused by silent mismatches between training, evaluation, package versions, and runtime loaders.
+- The lasting lesson is to add automated tripwires for tensor inventories, train/eval parity, and configuration drift.
 
 ## 1. Silent PEFT loading on `transformers 5.5 → 5.8` (2026-05-12)
 

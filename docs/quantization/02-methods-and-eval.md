@@ -1,8 +1,12 @@
 # Quantization methods & eval
 
-## TLDR
+## TL;DR
 
-Catalogs every quantization method tested (`mlx_vlm.convert` affine + mixed-precision, MLX hybrid with mlx-lm cores, GPTQ/AWQ, bnb NF4, QAT) and the eval protocol. Default deploy method is `mlx_vlm.convert -q` because it's the only format `mlx-swift-lm` consumes; bnb NF4 is reference-only because it quantizes the vision tower and collapses PlantNet to 0.1 %. Quick-test eval = PlantNet n=300 at seed 0.
+- This doc explains the quantization methods under test and the evaluation protocol used to compare them fairly.
+- `mlx_vlm.convert -q` is the default deploy route because it produces the MLX format consumed by the iOS runtime.
+- CUDA/HF methods such as GPTQ and AWQ are useful reference paths, but their outputs need separate handling before they can become iOS artifacts.
+- bitsandbytes NF4 is reference-only here because quantizing the vision tower caused PlantNet accuracy to collapse to 0.1 %.
+- Quick-test results use PlantNet n=300 with seed 0, so readers should treat small differences as noisy unless backed by larger evaluations.
 
 What we test and how we measure it. Companion to:
 

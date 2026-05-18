@@ -1,8 +1,11 @@
 # Route B.2 — MLX-native quant: algorithm-improvement program
 
-## TLDR
+## TL;DR
 
-Research spec for improving MLX-native Gemma 4 quantization without CUDA. Two parallel tracks: port production-grade GPTQ stability and recovery tricks into MLX's GPTQ path, and sweep `mlx_vlm.convert --q-mode` (mxfp4/nvfp4/mxfp8) plus `--quant-predicate` mixed recipes. Parallel research track; B.1 still ships first.
+- This spec lays out longer-term work to improve MLX-native Gemma 4 quantization without relying on CUDA tooling.
+- One track ports production GPTQ stability and recovery techniques into the MLX path, including act-order, dead-column handling, clipping, and low-rank residual recovery.
+- The other track sweeps MLX conversion modes and mixed-precision predicates to map the data-free tradeoff curve.
+- This is a research track, so readers should treat it as future improvement work rather than the current deployment recipe.
 
 > last edit: 2026-05-14
 >

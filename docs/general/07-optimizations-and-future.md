@@ -1,12 +1,11 @@
 # Optimizations — Catalog of What Shipped & What's Open
 
-## TLDR
+## TL;DR
 
-Categorized catalog of every on-device and pipeline optimization that shipped, plus open future directions. Spans memory lifecycle, model size (audio-tower strip saved ~583 MB), generation parameters (maxTokens 120, maxKVSize 1024), TTS chunking (80-char cap), vision (1280px downscale, 960x672 metadata patch), and concurrency. Reference for what knobs already exist before adding new ones.
-
-Categorized list of every on-device / pipeline optimization that
-shipped, plus future directions that didn't make the hackathon
-deadline.
+- This doc catalogs shipped optimizations before adding new knobs or re-tuning existing ones.
+- Memory improvements focus on lazy loading, explicit unloads, cache clearing, and avoiding simultaneous large-model residency.
+- Size and speed improvements include stripping unused model weights, bounding generation length, chunking speech, and downscaling photos.
+- The remaining future work is separated from shipped behavior so readers can distinguish proven fixes from open ideas.
 
 ## Part 1 — what shipped (categorized)
 

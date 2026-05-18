@@ -1,26 +1,11 @@
 # MLX-VLM / mlx-swift-lm vs hf_transformers — Gemma 4 E2B KV-share layout
 
-## TLDR
+## TL;DR
 
-Audit of KV-shared layer parity across `mlx_vlm` (Python), `mlx-swift-lm` (iOS), and `hf_transformers 5.8`. Both MLX paths compute KV-sharing semantically identically to v5.8 (correct); neither replicates the v5.5 bug. Difference: MLX still instantiates dead `k_proj`/`v_proj`/`k_norm`/`v_norm` on E2B layers 15-34 and loads inert weights (~7 MB int4) - no correctness impact, no LoRA implication for newly-trained adapters.
-
-Cross-check triggered by the overfit-memorization debug (see
-[`15-postmortems.md`](15-postmortems.md) §1 "PEFT silent loading"). On
-the training side, `transformers 5.5` exposed standalone `k_proj` /
-`v_proj` modules in every one of E2B's 35 language-model decoder
-layers. `transformers 5.8` removed those modules on the KV-shared
-layers (15-34 for E2B), so old adapters silently lose 80 LoRA tensors
-on reload via PEFT.
-
-The inference side on iPhone is **not** `transformers`. It is the MLX
-path: `mlx_vlm` (Python reference) plus `mlx-swift-lm` (the actual
-runtime). This note audits both for the same architectural issue.
-
-Repos audited (as of 2026-05-14):
-
-- `mlx-vlm` (Python) — `mlx_vlm/models/gemma4/`
-- `mlx-swift-lm` (Swift, iOS runtime) — `Libraries/MLXLLM/Models/Gemma4Text.swift`
-- `hf_transformers` 5.8 — `src/transformers/models/gemma4/modular_gemma4.py`
+- This audit checks whether MLX inference handles Gemma 4 KV-shared layers the same way as the corrected Hugging Face implementation.
+- Both Python MLX and Swift MLX paths reuse shared key/value states correctly and do not repeat the older adapter-loading bug.
+- MLX still carries some unused key/value projection weights for shared layers, but those tensors are inert during the forward pass.
+- Newly trained adapters are not affected by the old layout mismatch as long as training and reload use the corrected model layout.
 
 ## KV-Sharing Verdict
 
