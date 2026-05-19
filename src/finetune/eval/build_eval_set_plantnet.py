@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Build a frozen, diverse generality eval set for quick iteration.
 
-Produces 6 JSONL files in src/finetune/eval_sets/:
+PlantNet-backed eval set builder (v1.0 / legacy benchmark). The default
+species-ID domain is PlantNet's ``plant`` bucket. Once an NA-trees eval
+recipe ships, that one will live at ``build_eval_set.py`` (no suffix);
+this file is preserved for benchmark continuity.
+
+Produces 6 JSONL files in src/finetune/eval/:
   - plant_100.jsonl      : 100 plant images, max 1 per species, spread across class_ids
   - llava_40.jsonl       : 40 general image Q&A from LLaVA val (diverse topics)
   - mmlu_50.jsonl        : 50 MMLU questions (5 subjects x 10)
@@ -16,12 +21,12 @@ Plant sampling strategy:
   -> Maximizes taxonomic diversity across the eval set
 
 Usage:
-    python src/finetune/eval_sets/build_eval_set.py \
+    python src/finetune/eval/build_eval_set_plantnet.py \
         --plant_val src/finetune/data/english-desc/val.jsonl \
-        [--llava_val src/data_mix/output/mix-50k/val_nonplant.jsonl] \
-        [--smoltalk_val src/data_mix/output/mix-50k/val_smoltalk.jsonl] \
-        [--negative_val src/data_mix/output/mix-50k/val_negative.jsonl] \
-        --output_dir src/finetune/eval_sets \
+        [--llava_val src/data_mix/output/mix-50k-plantnet/val_nonplant.jsonl] \
+        [--smoltalk_val src/data_mix/output/mix-50k-plantnet/val_smoltalk.jsonl] \
+        [--negative_val src/data_mix/output/mix-50k-plantnet/val_negative.jsonl] \
+        --output_dir src/finetune/eval \
         --seed 42
 """
 from __future__ import annotations
@@ -304,7 +309,7 @@ def main():
     parser.add_argument("--smoltalk_val", type=Path, default=None,
                         help="Path to smoltalk val JSONL")
     parser.add_argument("--output_dir", type=Path,
-                        default=FINETUNE_DIR / "eval_sets",
+                        default=FINETUNE_DIR / "eval",
                         help="Output directory for frozen eval files")
     parser.add_argument("--plant_n", type=int, default=100,
                         help="Number of plant samples (default: 100)")

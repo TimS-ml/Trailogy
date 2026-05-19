@@ -16,11 +16,11 @@ Qwen judge is called only for open-ended domains (llava, text_chat) —
 the rest use deterministic rule-based metrics.
 
 Usage:
-    python src/finetune/eval_sets/evaluate_generality.py \
+    python src/finetune/eval/evaluate_generality_plantnet.py \
         --base_model unsloth/gemma-4-E2B-it \
         --adapter_path outputs/my-lora \
-        --eval_dir src/finetune/eval_sets \
-        --output_file src/finetune/eval_sets/results/generality_report.json \
+        --eval_dir src/finetune/eval \
+        --output_file src/finetune/eval/results/generality_report.json \
         --qwen_model qwen-plus
 """
 from __future__ import annotations
@@ -259,7 +259,7 @@ def _resolve_mix_image_paths(
     silently scoring placeholder text) is the failure mode this guard
     exists to prevent. Concretely:
 
-      * Empty record list → SystemExit (build_eval_set.py's fallback
+      * Empty record list → SystemExit (build_eval_set_plantnet.py's fallback
         used to emit ``[PLACEHOLDER]`` records when the val source was
         missing; if that path ever reactivates, fail here rather than
         score garbage).
@@ -271,7 +271,7 @@ def _resolve_mix_image_paths(
     if not records:
         raise SystemExit(
             f"{domain} domain: {eval_file} has 0 records. Refusing to "
-            f"emit zeros. Re-generate via build_eval_set.py against the "
+            f"emit zeros. Re-generate via build_eval_set_plantnet.py against the "
             f"real mix-50k val sources (val_nonplant.jsonl / "
             f"val_negative.jsonl) — the placeholder fallback path is a "
             f"footgun."
@@ -311,7 +311,7 @@ def _resolve_mix_image_paths(
                 f"  Either point --mix_image_root at the directory holding "
                 f"llava/<hash>.jpg and negative/<hash>.jpg, or restore the "
                 f"committed eval-image bundle under "
-                f"hikeCompanion/finetune/eval_sets/images/."
+                f"src/finetune/eval/images/."
             )
         rec = dict(rec)  # don't mutate caller's list element
         rec["image"] = str(p)
@@ -459,7 +459,7 @@ Output ONLY valid JSON: {{"score": <1-5>, "plant_leakage": <true/false>, "reason
 
     def __init__(self, model: str = "qwen-plus", cache_path: Path | None = None):
         self.model = model
-        self.cache_path = cache_path or FINETUNE_DIR / "eval_sets" / "results" / ".judge_cache.json"
+        self.cache_path = cache_path or FINETUNE_DIR / "eval" / "results" / ".judge_cache.json"
         self.cache: dict[str, dict] = {}
         self._load_cache()
 
@@ -964,9 +964,9 @@ def main():
     parser.add_argument("--loader", type=str, default=None,
                         choices=["mlx_vlm", "hf_bf16", "hf_gptq", "hf_gptq_hybrid"],
                         help="Model loader backend. Use mlx_vlm for quantized MLX models on Mac")
-    parser.add_argument("--eval_dir", type=Path, default=FINETUNE_DIR / "eval_sets")
+    parser.add_argument("--eval_dir", type=Path, default=FINETUNE_DIR / "eval")
     parser.add_argument("--output_file", type=Path,
-                        default=FINETUNE_DIR / "eval_sets" / "results" / "generality_report.json")
+                        default=FINETUNE_DIR / "eval" / "results" / "generality_report.json")
     parser.add_argument("--max_new_tokens", type=int, default=256)
     parser.add_argument("--qwen_model", type=str, default="qwen-plus",
                         help="Qwen model for judging (qwen-plus, qwen-max, etc.)")
@@ -1038,7 +1038,7 @@ def main():
     # ``<eval_dir>/images/`` self-contained bundle. The last one is the
     # zero-config path for anyone who cloned the repo and ran
     # prepare_plantnet_50k.sh — the ~5 MB image bundle is shipped in
-    # finetune/eval_sets/images/ so no separate data step is needed.
+    # src/finetune/eval/images/ so no separate data step is needed.
     if args.mix_image_root is None and os.environ.get("MIX_IMAGE_ROOT"):
         args.mix_image_root = Path(os.environ["MIX_IMAGE_ROOT"])
     if args.mix_image_root is None:
@@ -1090,7 +1090,7 @@ def main():
         if not eval_file.exists():
             raise SystemExit(
                 f"{domain} domain: eval file not found: {eval_file}\n"
-                f"  Regenerate via build_eval_set.py, or pick a different "
+                f"  Regenerate via build_eval_set_plantnet.py, or pick a different "
                 f"--eval_dir."
             )
 
