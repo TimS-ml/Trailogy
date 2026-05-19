@@ -1,58 +1,79 @@
 #!/usr/bin/env python3
-"""Fetch plant observations near a target location from iNaturalist.
+"""Fetch plant observations from iNaturalist.
 
-**Geographically-grounded data collection.** The default lat/lng centres
-on Pittsburgh, PA (40.4406, -79.9959) with an 80 km radius — this is
-the region of Trailogy's three trails (Kildoo / McConnells Mill,
-Jennings, Frick Park, all in western PA). Training data therefore
-matches the species distribution users actually encounter on the
-supported trails, which the plain PlantNet-50k corpus does not
-represent.
+**Default scope: US-wide research-grade Plantae, stratified by species.**
+We diverged from the upstream-reference ``na_tree_fetch.py`` (Pittsburgh
+regional + flat `created_at desc` pagination) for two reasons:
 
-The lat/lng is THE primary design choice. Every other request param
-(``taxon_name``, ``quality_grade``, ``photos``, ``per_page``, ``page``,
-``order_by``, ``order``) defaults to the upstream reference
-``na_tree_fetch.py`` byte-for-byte so a default run pulls the same
-image set as the reference script — i.e. all CC-vetted Plantae photos
-within 80 km of Pittsburgh, paginated until empty with a 1 s
-inter-page sleep.
+  1. A tight regional sweep returns ~4-8 species (recent test: 4
+     species across 176 obs).
+  2. Flat pagination by ``created_at desc`` / ``votes desc`` is heavily
+     long-tail dominated (35 species across 10 000 obs in our US-wide
+     probe), AND iNaturalist hard-caps deep pagination at ~10 000
+     results (403 after ``page=50`` at ``per_page=200``).
 
-What this script does on top of the reference:
+The new flow is **stratified by species**:
 
-  1. Saves the per-photo metadata to ``observations.jsonl`` (the
-     reference holds it in memory and discards on exit; we persist it).
-  2. **Downloads** every photo to a local cache. Output layout::
+  1. Call ``/v1/observations/species_counts`` with the filter to get
+     the top-N species by observation count in the region.
+  2. For each species, pull up to ``--obs-per-species`` research-grade
+     observations via ``/v1/observations?taxon_id=...``.
+  3. Aggregate, split per-observation_id into train/val/test, download.
 
-         <output_dir>/
-             observations.jsonl       # one JSON line per photo
-             fetch_report.json
-             train/<slug>/<obs_id>_<photo_idx>.jpg
-             val/<slug>/<obs_id>_<photo_idx>.jpg
-             test/<slug>/<obs_id>_<photo_idx>.jpg
+The geographic centre / radius knobs are still here as optional CLI
+flags (``--lat``, ``--lng``, ``--radius``) — see the **Pittsburgh
+example** below for the regional-fetch invocation. They are commented
+out of ``DEFAULT_PARAMS`` so a default run uses ``place_id`` instead.
 
-     The slug = sanitised ``preferred_common_name`` (falls back to the
-     Latin name). Split assignment is on a per-OBSERVATION key (so all
-     photos of the same observation always land in the same split — no
-     train/test leakage from near-duplicate frames of one plant).
-  3. The default ``--output-dir`` is ``<repo>/../data/inaturalist_na_trees/``,
-     a sibling of the repo (the Trailogy convention; matches
-     ``data_mix.src.env_paths`` defaults). Override with ``--output-dir``,
-     or relocate the whole external data root via the
-     ``TRAILOGY_DATA_ROOT`` env var consumed by env_paths.
+Default request params::
+
+    {
+        "taxon_name":    "Plantae",
+        "quality_grade": "research",
+        "photos":        "true",
+        "place_id":      1,              # iNaturalist place id for the US
+        # "lat":         40.4406,        # Pittsburgh example — set via --lat
+        # "lng":         -79.9959,       #   --lng
+        # "radius":      80,             #   --radius (km)
+        "per_page":      200,
+        "page":          1,
+        "order_by":      "created_at",
+        "order":         "desc",
+    }
+
+Output layout (default ``--output-dir`` is
+``<repo>/../data/inaturalist_na_trees/``, the Trailogy convention —
+relocate the whole external data root via ``TRAILOGY_DATA_ROOT``)::
+
+    <output_dir>/
+        observations.jsonl       # one JSON line per photo
+        fetch_report.json
+        {train,val,test}.jsonl   # same JSONL bucketed by split
+        train/<slug>/<obs_id>_<photo_idx>.jpg
+        val/<slug>/<obs_id>_<photo_idx>.jpg
+        test/<slug>/<obs_id>_<photo_idx>.jpg
+
+The slug = sanitised ``preferred_common_name`` (falls back to the
+Latin name). Split assignment is on a per-OBSERVATION key (so all
+photos of the same observation always land in the same split — no
+train/test leakage from near-duplicate frames of one plant).
 
 Usage::
 
-    # Default sweep — Pittsburgh, 80 km, all plants, downloaded into
-    # ./inaturalist_na_trees/{train,val,test}/<slug>/...
+    # Default sweep — US-wide research-grade Plantae, stop at
+    # ~150 species. Downloads images into <output_dir>/{train,val,test}/.
     python src/data_mix/scripts/na_tree_fetch.py
 
     # Same sweep, metadata only (no image bytes on disk).
     python src/data_mix/scripts/na_tree_fetch.py --no-download
 
-Network: paginated request loop. A radius-80 km Pittsburgh sweep
-typically yields a few thousand research-grade plant observations.
-iNaturalist rate-limits to ~60 req/min per IP; the 1 s inter-page
-sleep stays safely under that.
+    # Pittsburgh-only example (matches the upstream reference's scope).
+    python src/data_mix/scripts/na_tree_fetch.py \\
+        --place-id 0 --lat 40.4406 --lng -79.9959 --radius 80
+
+Network: 1 species_counts call + N per-taxon obs fetches, 0.5-1 s
+inter-call sleep. Default (150 species × 50 obs each ≈ 7500 photos)
+runs in ~3-5 min and lands ~75 MB on disk.
 """
 
 from __future__ import annotations
@@ -77,23 +98,48 @@ except ImportError:
     sys.exit(2)
 
 
-BASE = "https://api.inaturalist.org/v1/observations"
+OBS_URL = "https://api.inaturalist.org/v1/observations"
+SPECIES_COUNTS_URL = "https://api.inaturalist.org/v1/observations/species_counts"
 
-# --- Default request params (MUST stay identical to the upstream
-#     reference ``na_tree_fetch.py``). Changing any of these silently
-#     drifts Trailogy's fetched corpus away from the reference. ---
+# iNaturalist place IDs (https://www.inaturalist.org/places). Useful
+# anchor points; override via ``--place-id``.
+PLACE_ID_US = 1               # United States (canonical, includes territories)
+PLACE_ID_CONTIGUOUS_US = 46   # Contiguous USA (sometimes called "Lower 48")
+
+# iNaturalist canonical taxon IDs. Plantae kingdom = 47126; we use
+# ``taxon_id`` (which descends into the whole subtree) instead of
+# ``taxon_name`` because the latter does fuzzy/substring matching and
+# leaks species whose common name happens to contain "plant" — e.g.
+# the "north american tarnished plant bug" (an *insect*, taxon_id
+# under Animalia).
+TAXON_ID_PLANTAE = 47126
+
+# --- Default request params. Reference ``na_tree_fetch.py`` was
+#     Pittsburgh-only with flat pagination; we relax to US-wide
+#     species-stratified sampling by default to lift the species count
+#     from ~4-8 (single-region) or ~35 (flat-paginated US) to ~150+.
+#     The Pittsburgh lat/lng/radius lines are intentionally kept
+#     (commented) as the regional-fetch example. ---
 DEFAULT_PARAMS: dict[str, Any] = {
-    "taxon_name":    "Plantae",
+    "taxon_id":      TAXON_ID_PLANTAE,
     "quality_grade": "research",
     "photos":        "true",
-    "lat":           40.4406,        # Pittsburgh example
-    "lng":           -79.9959,
-    "radius":        80,             # km
+    "place_id":      PLACE_ID_US,     # United States (drop or override
+                                      #   to widen / narrow scope)
+    # Reference (Pittsburgh) — set via --lat / --lng / --radius:
+    # "lat":           40.4406,
+    # "lng":           -79.9959,
+    # "radius":        80,             # km
     "per_page":      200,
-    "page":          1,
     "order_by":      "created_at",
     "order":         "desc",
 }
+
+DEFAULT_TARGET_SPECIES = 150
+DEFAULT_OBS_PER_SPECIES = 50
+
+# Backward-compat alias: some callers still import ``BASE``.
+BASE = OBS_URL
 
 # Default cache lives OUTSIDE the repo at ``<repo>/../data/inaturalist_na_trees/``
 # (sibling-of-repo convention shared with env_paths.py). Override via
@@ -155,40 +201,88 @@ def assign_split(
     return "test"
 
 
-def paginate_observations(
-    base_params: dict[str, Any],
-    *,
-    max_pages: int | None = None,
+def fetch_top_species(
+    base_params: dict[str, Any], n_species: int
 ) -> list[dict[str, Any]]:
-    """Walk the iNaturalist obs endpoint with the given filter. Default
-    loop: ``while True``, break when a page returns 0 results — identical
-    to the upstream reference. ``max_pages`` is an optional safety cap.
-    """
-    params = dict(base_params)  # mutate a local copy
-    obs_all: list[dict[str, Any]] = []
-    while True:
-        r = requests.get(BASE, params=params, timeout=HTTP_TIMEOUT_SEC)
-        r.raise_for_status()
-        data = r.json()
+    """Call ``/v1/observations/species_counts`` to rank species by
+    observation count under the given filter.
 
-        results = data.get("results", [])
+    iNaturalist's ``species_counts`` endpoint caps ``per_page`` at
+    500. For larger N we paginate (page=1,2,...).
+
+    Returns a list of taxon dicts (keys: ``id``, ``name``,
+    ``preferred_common_name``, ``rank``) for the top ``n_species``.
+    """
+    out: list[dict[str, Any]] = []
+    page = 1
+    while len(out) < n_species:
+        params = dict(base_params)
+        params["per_page"] = min(500, n_species - len(out))
+        params["page"] = page
+        # ``species_counts`` has its own ordering convention
+        # (``observations_count desc`` by default). Forwarding the
+        # obs-endpoint ``order_by=created_at`` would degrade the
+        # discovery to "species that uploaded recently" instead of
+        # "most-observed species in the region".
+        params.pop("order_by", None)
+        params.pop("order", None)
+        # ``photos=true`` filters out photo-less obs from the count too,
+        # so the species we discover are exactly the ones we can then
+        # download images for.
+        r = requests.get(
+            SPECIES_COUNTS_URL, params=params, timeout=HTTP_TIMEOUT_SEC,
+        )
+        r.raise_for_status()
+        results = r.json().get("results", []) or []
         if not results:
             break
-
-        obs_all.extend(results)
-        total = data.get("total_results")
-        print(
-            f"  page {params['page']}: +{len(results)} obs "
-            f"(running total {len(obs_all)} / {total or '?'})",
-            flush=True,
-        )
-
-        params["page"] += 1
-        if max_pages is not None and params["page"] > max_pages:
+        for rec in results:
+            taxon = rec.get("taxon") or {}
+            if not taxon.get("id"):
+                continue
+            out.append(taxon)
+        page += 1
+        if len(out) >= n_species:
             break
         time.sleep(INTER_PAGE_SLEEP_SEC)
+    return out[:n_species]
 
-    return obs_all
+
+def fetch_observations_for_taxon(
+    base_params: dict[str, Any],
+    taxon_id: int,
+    max_obs: int,
+    *,
+    max_pages_per_taxon: int = 10,
+) -> list[dict[str, Any]]:
+    """Pull up to ``max_obs`` research-grade observations for one taxon.
+
+    Drops ``taxon_name`` from ``base_params`` (``taxon_id`` is more
+    specific) and overrides ``page`` / ``per_page`` to walk per-200.
+    Pages are capped at ``max_pages_per_taxon`` as a safety net even
+    if the taxon has more obs than we need.
+    """
+    params = dict(base_params)
+    params.pop("taxon_name", None)
+    params["taxon_id"] = taxon_id
+    out: list[dict[str, Any]] = []
+    page = 1
+    while len(out) < max_obs and page <= max_pages_per_taxon:
+        params["page"] = page
+        params["per_page"] = min(200, max_obs - len(out))
+        r = requests.get(
+            OBS_URL, params=params, timeout=HTTP_TIMEOUT_SEC,
+        )
+        r.raise_for_status()
+        results = r.json().get("results", []) or []
+        if not results:
+            break
+        out.extend(results)
+        page += 1
+        if len(out) >= max_obs:
+            break
+        time.sleep(INTER_PAGE_SLEEP_SEC * 0.5)  # gentler intra-taxon
+    return out[:max_obs]
 
 
 def flatten_photos(
@@ -284,36 +378,51 @@ def main(argv: list[str] | None = None) -> int:
              f"(resolved at script-load time to "
              f"{str(DEFAULT_OUTPUT_DIR)!r}).",
     )
-    # --- Geographic + taxon filter (defaults MUST match
-    #     DEFAULT_PARAMS / upstream reference). ---
+    # --- Geographic filter. Default: place_id=1 (United States).
+    #     Lat/lng/radius are optional regional overrides — when any of
+    #     them is given, the per-page request uses them and place_id
+    #     is dropped unless --place-id is also explicit. ---
     ap.add_argument(
-        "--lat", type=float, default=DEFAULT_PARAMS["lat"],
-        help=f"Latitude of the search centre. Default: "
-             f"{DEFAULT_PARAMS['lat']} (Pittsburgh example).",
+        "--place-id", type=int, default=DEFAULT_PARAMS["place_id"],
+        help=f"iNaturalist place_id (https://www.inaturalist.org/places). "
+             f"Default: {DEFAULT_PARAMS['place_id']} (United States). "
+             "Pass 0 to disable the place filter (paired with --lat / "
+             "--lng / --radius for a regional fetch).",
     )
     ap.add_argument(
-        "--lng", type=float, default=DEFAULT_PARAMS["lng"],
-        help=f"Longitude of the search centre. Default: "
-             f"{DEFAULT_PARAMS['lng']} (Pittsburgh example).",
+        "--lat", type=float, default=None,
+        help="Latitude of the search centre (regional override; e.g. "
+             "40.4406 for Pittsburgh). Default: unset (use --place-id).",
     )
     ap.add_argument(
-        "--radius", type=float, default=DEFAULT_PARAMS["radius"],
-        help=f"Search radius in km. Default: {DEFAULT_PARAMS['radius']}.",
+        "--lng", type=float, default=None,
+        help="Longitude of the search centre (regional override; e.g. "
+             "-79.9959 for Pittsburgh). Default: unset (use --place-id).",
     )
     ap.add_argument(
-        "--taxon-name", default=DEFAULT_PARAMS["taxon_name"],
-        help=f"iNaturalist taxon_name filter. Default: "
-             f"{DEFAULT_PARAMS['taxon_name']!r}.",
+        "--radius", type=float, default=None,
+        help="Search radius in km (regional override; e.g. 80 km for a "
+             "city-sized sweep). Default: unset (use --place-id).",
+    )
+    # --- Taxon filter. Default: --taxon-id Plantae kingdom. ---
+    ap.add_argument(
+        "--taxon-id", type=int, default=DEFAULT_PARAMS["taxon_id"],
+        help=f"iNaturalist taxon_id (the filter descends into the "
+             f"whole subtree). Default: {DEFAULT_PARAMS['taxon_id']} "
+             "(Plantae kingdom).",
+    )
+    ap.add_argument(
+        "--taxon-name", default=None,
+        help="Override the --taxon-id filter with a taxon_name string "
+             "(WARNING: does fuzzy / substring matching server-side; "
+             "'Plantae' leaks non-plant species whose common name "
+             "contains 'plant'. Prefer --taxon-id for precise filters). "
+             "Default: unset.",
     )
     ap.add_argument(
         "--quality-grade", default=DEFAULT_PARAMS["quality_grade"],
         help=f"iNaturalist quality_grade filter. Default: "
              f"{DEFAULT_PARAMS['quality_grade']!r}.",
-    )
-    ap.add_argument(
-        "--per-page", type=int, default=DEFAULT_PARAMS["per_page"],
-        help=f"Page size (iNaturalist max=200). Default: "
-             f"{DEFAULT_PARAMS['per_page']}.",
     )
     ap.add_argument(
         "--order-by", default=DEFAULT_PARAMS["order_by"],
@@ -325,11 +434,7 @@ def main(argv: list[str] | None = None) -> int:
         help=f"iNaturalist order direction. Default: "
              f"{DEFAULT_PARAMS['order']!r}.",
     )
-    ap.add_argument(
-        "--start-page", type=int, default=DEFAULT_PARAMS["page"],
-        help=f"First page index to request. Default: "
-             f"{DEFAULT_PARAMS['page']}.",
-    )
+
     # --- Split + download knobs (Trailogy extensions). ---
     ap.add_argument(
         "--split-ratios", type=parse_split_ratios,
@@ -350,10 +455,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.set_defaults(download=True)
     ap.add_argument(
-        "--max-pages", type=int, default=None,
-        help="Optional safety cap on pagination depth. Default: None "
-             "(paginate until results empty, matching the upstream "
-             "reference).",
+        "--target-species", type=int, default=DEFAULT_TARGET_SPECIES,
+        help=f"Number of distinct species to pull (discovered via "
+             f"species_counts, ranked by observation count under the "
+             f"filter). Default: {DEFAULT_TARGET_SPECIES}.",
+    )
+    ap.add_argument(
+        "--obs-per-species", type=int, default=DEFAULT_OBS_PER_SPECIES,
+        help=f"Max observations to pull per species. Default: "
+             f"{DEFAULT_OBS_PER_SPECIES}. Each obs typically has 1-2 "
+             "photos, so ~50 obs -> ~75 photos per species.",
+    )
+    ap.add_argument(
+        "--max-pages-per-taxon", type=int, default=10,
+        help="Safety cap on pagination depth per taxon. Default: 10. "
+             "Only kicks in for very popular taxa with thousands of obs.",
     )
     ap.add_argument(
         "--max-workers", type=int, default=32,
@@ -364,31 +480,84 @@ def main(argv: list[str] | None = None) -> int:
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     base_params: dict[str, Any] = {
-        "taxon_name":    args.taxon_name,
         "quality_grade": args.quality_grade,
         "photos":        "true",
-        "lat":           args.lat,
-        "lng":           args.lng,
-        "radius":        args.radius,
-        "per_page":      args.per_page,
-        "page":          args.start_page,
         "order_by":      args.order_by,
         "order":         args.order,
     }
+    # Taxon filter: --taxon-name overrides --taxon-id when given.
+    if args.taxon_name:
+        base_params["taxon_name"] = args.taxon_name
+    else:
+        base_params["taxon_id"] = args.taxon_id
+    # Geographic filter: regional override (lat+lng+radius) wins over
+    # place_id when all three are given; otherwise place_id is used
+    # unless explicitly disabled with --place-id 0.
+    regional = (
+        args.lat is not None and args.lng is not None and args.radius is not None
+    )
+    if regional:
+        base_params["lat"] = args.lat
+        base_params["lng"] = args.lng
+        base_params["radius"] = args.radius
+    if args.place_id and not regional:
+        base_params["place_id"] = args.place_id
 
+    geo_str = (
+        f"lat={args.lat} lng={args.lng} radius={args.radius} km"
+        if regional
+        else f"place_id={base_params.get('place_id') or '<none>'}"
+    )
+    taxon_str = (
+        f"taxon_name={args.taxon_name!r}"
+        if args.taxon_name
+        else f"taxon_id={args.taxon_id}"
+    )
     print(
-        f"== iNaturalist geographic fetch ==\n"
-        f"  centre : lat={args.lat} lng={args.lng} radius={args.radius} km\n"
-        f"  taxon  : {args.taxon_name!r}  quality={args.quality_grade!r}\n"
-        f"  paging : per_page={args.per_page} order_by={args.order_by} "
-        f"order={args.order}  max_pages={args.max_pages}\n"
+        f"== iNaturalist stratified fetch ==\n"
+        f"  scope  : {geo_str}\n"
+        f"  taxon  : {taxon_str}  quality={args.quality_grade!r}\n"
+        f"  target : species={args.target_species}  "
+        f"obs/species={args.obs_per_species}\n"
         f"  splits : train/val/test = "
         f"{tuple(round(r, 4) for r in args.split_ratios)}  seed={args.seed}\n"
         f"  output : {args.output_dir}  download={args.download}",
         flush=True,
     )
 
-    observations = paginate_observations(base_params, max_pages=args.max_pages)
+    print(
+        f"Step 1: discover top {args.target_species} species via "
+        f"species_counts ...",
+        flush=True,
+    )
+    top_taxa = fetch_top_species(base_params, args.target_species)
+    print(f"  -> got {len(top_taxa)} species", flush=True)
+    if not top_taxa:
+        print("ERROR: species_counts returned 0 results.", file=sys.stderr)
+        return 3
+
+    print(
+        f"Step 2: fetch up to {args.obs_per_species} obs per species "
+        f"({len(top_taxa)} taxa × ~1 call) ...",
+        flush=True,
+    )
+    observations: list[dict[str, Any]] = []
+    for i, taxon in enumerate(top_taxa, 1):
+        taxon_id = taxon["id"]
+        slug_preview = (
+            taxon.get("preferred_common_name") or taxon.get("name") or "?"
+        )
+        obs = fetch_observations_for_taxon(
+            base_params, taxon_id, args.obs_per_species,
+            max_pages_per_taxon=args.max_pages_per_taxon,
+        )
+        observations.extend(obs)
+        if i % 10 == 0 or i == len(top_taxa):
+            print(
+                f"  [{i:3d}/{len(top_taxa)}] {slug_preview!r}: "
+                f"+{len(obs)} obs (running total {len(observations)})",
+                flush=True,
+            )
     photo_records = flatten_photos(
         observations,
         seed=args.seed,
@@ -528,28 +697,31 @@ def _write_report(
     report.write_text(json.dumps({
         "output_dir": str(args.output_dir.resolve()),
         "request_params": {
+            "taxon_id":      None if args.taxon_name else args.taxon_id,
             "taxon_name":    args.taxon_name,
             "quality_grade": args.quality_grade,
             "photos":        "true",
+            "place_id":      args.place_id or None,
             "lat":           args.lat,
             "lng":           args.lng,
             "radius":        args.radius,
-            "per_page":      args.per_page,
-            "page":          args.start_page,
             "order_by":      args.order_by,
             "order":         args.order,
         },
-        "max_pages":          args.max_pages,
-        "download":           args.download,
-        "split_ratios":       list(args.split_ratios),
-        "split_seed":         args.seed,
-        "n_observations":     len(observations),
-        "n_photo_records":    len(photo_records),
-        "n_photos_requested": n_jobs,
-        "n_photos_delivered": n_succ,
-        "requested_by_split":          requested,
-        "delivered_by_split":          delivered,
-        "total_bytes_by_split":        total_bytes_by_split,
+        "strategy":               "species_counts -> per-taxon obs fetch",
+        "target_species":         args.target_species,
+        "obs_per_species":        args.obs_per_species,
+        "max_pages_per_taxon":    args.max_pages_per_taxon,
+        "download":               args.download,
+        "split_ratios":           list(args.split_ratios),
+        "split_seed":             args.seed,
+        "n_observations":         len(observations),
+        "n_photo_records":        len(photo_records),
+        "n_photos_requested":     n_jobs,
+        "n_photos_delivered":     n_succ,
+        "requested_by_split":     requested,
+        "delivered_by_split":     delivered,
+        "total_bytes_by_split":   total_bytes_by_split,
     }, indent=2))
     print(f"Wrote: {report}")
 
