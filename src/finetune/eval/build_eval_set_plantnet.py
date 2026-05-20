@@ -7,7 +7,7 @@ recipe ships, that one will live at ``build_eval_set.py`` (no suffix);
 this file is preserved for benchmark continuity.
 
 Produces 6 JSONL files in src/finetune/eval/:
-  - plant_100.jsonl      : 100 plant images, max 1 per species, spread across class_ids
+  - plantnet_plant_100.jsonl : 100 plant images, max 1 per species, spread across class_ids
   - llava_40.jsonl       : 40 general image Q&A from LLaVA val (diverse topics)
   - mmlu_50.jsonl        : 50 MMLU questions (5 subjects x 10)
   - aime_20.jsonl        : 20 AIME math problems
@@ -324,9 +324,12 @@ def main():
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
 
-    # 1. Plant (100 diverse species)
+    # 1. Plant (100 diverse species) — PlantNet-300K source.
+    # Filename is `plantnet_plant_<N>.jsonl` to distinguish from the
+    # NA-Plantae eval set (`plantae_plant_<N>.jsonl`) which is built
+    # separately from data/mix-50k/val_plant.jsonl.
     plant = sample_plant_diverse(args.plant_val, n=args.plant_n, seed=args.seed)
-    write_jsonl(plant, out / f"plant_{args.plant_n}.jsonl")
+    write_jsonl(plant, out / f"plantnet_plant_{args.plant_n}.jsonl")
 
     # 2. LLaVA general image Q&A
     llava = sample_llava(args.llava_val, n=args.llava_n, seed=args.seed)

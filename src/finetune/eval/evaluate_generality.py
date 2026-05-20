@@ -1,27 +1,48 @@
 #!/usr/bin/env python3
 """Multi-domain generality evaluation with Qwen-as-judge.
 
-Runs the finetuned model on all 6 eval domains and produces a combined
-report with per-domain metrics + a single generality score.
+Runs the finetuned model on the default 5 eval domains and produces a
+combined report with per-domain metrics + a single generality score.
 
 Domain metrics:
-  - plant:     species_match (exact), rouge_l
-  - llava:     qwen_score (1-5), plant_leakage (bool)
-  - mmlu:      accuracy (letter match)
-  - aime:      accuracy (numeric match)
-  - refusal:   refusal_detected (keyword match)
-  - text_chat: qwen_score (1-5), plant_leakage (bool)
+  - plant:     species_match (exact), rouge_l        [default]
+  - mmlu:      accuracy (letter match)                [default]
+  - aime:      accuracy (numeric match)               [default]
+  - refusal:   refusal_detected (keyword match)       [default]
+  - llava:     qwen_score (1-5) or rouge_l fallback,  [default]
+               plant_leakage (bool)
+  - text_chat: qwen_score (1-5) or rouge_l fallback,  [opt-in]
+               plant_leakage (bool)
+               (overlaps llava as an open-ended canary; pass
+                --domains explicitly to include)
 
 Qwen judge is called only for open-ended domains (llava, text_chat) —
-the rest use deterministic rule-based metrics.
+the rest use deterministic rule-based metrics. Pass --skip_judge to
+fall back to ROUGE-L on the open-ended domains (no API calls).
+
+Plant eval set selection:
+  - Default: ``plantae_plant_300.jsonl`` (NA-Plantae, 300 species; the
+    current training distribution).
+  - Legacy benchmark: pass ``--plant_eval_file eval/plantnet_plant_100.jsonl``
+    to score against the PlantNet-300K v1.0 frozen benchmark for
+    cross-run continuity.
+  - The script auto-detects the file's image-path style: absolute
+    paths (NA-Plantae) pass through; relative paths (PlantNet) require
+    ``--plant_image_root`` / ``$PLANT_IMAGE_ROOT``.
 
 Usage:
-    python src/finetune/eval/evaluate_generality_plantnet.py \
+    python src/finetune/eval/evaluate_generality.py \
         --base_model unsloth/gemma-4-E2B-it \
         --adapter_path outputs/my-lora \
         --eval_dir src/finetune/eval \
         --output_file src/finetune/eval/results/generality_report.json \
         --qwen_model qwen-plus
+
+    # Legacy plantnet benchmark:
+    python src/finetune/eval/evaluate_generality.py \
+        --plant_eval_file src/finetune/eval/plantnet_plant_100.jsonl \
+        --plant_image_root /path/to/plantnet/val/ \
+        --adapter_path outputs/my-lora
 """
 from __future__ import annotations
 
@@ -186,13 +207,15 @@ def _resolve_plant_image_paths(
     plant_image_root: Path | None,
     eval_file: Path,
 ) -> list[dict]:
-    """Resolve plant_100.jsonl ``image`` fields to absolute paths on
-    this machine.
+    """Resolve plant-eval ``image`` fields to absolute paths on this machine.
 
     Accepts records whose ``image`` is either:
-      * relative (the portable form, e.g. ``138/5f8e....jpg``) — joined
-        against ``plant_image_root``; or
+      * relative (the portable form, e.g. PlantNet's ``138/5f8e....jpg``)
+        — joined against ``plant_image_root``; or
       * absolute and already exists on this machine — passed through.
+        The default NA-Plantae eval set (``plantae_plant_300.jsonl``)
+        ships absolute paths, so ``plant_image_root`` is not needed
+        for that case.
 
     Fails loud on the first record that resolves to a missing file.
     Silent skipping would quietly shrink the eval set and bias the
@@ -794,7 +817,21 @@ def _generate_mlx(handle, user_content: str, image_path: str | None, max_new_tok
 
 
 def _generate_hf(handle, user_content: str, image_path: str | None, max_new_tokens: int) -> str:
-    """Generate via HF transformers (CUDA/MPS)."""
+    """Generate via HF transformers (CUDA/MPS).
+
+    Two-step prompt assembly to dodge a transformers v5.8 trap:
+    ``apply_chat_template(..., tokenize=True, images=[image])`` raises
+    ``TypeError: ... got multiple values for keyword argument 'images'``
+    because Gemma4Processor.apply_chat_template now extracts images
+    from the messages content (``{"type": "image", ...}``) and *also*
+    forwards an explicit ``images=`` kwarg to the underlying processor
+    call. Passing the image via either channel alone works, but the
+    cleanest fix that mirrors src/evaluate.py is:
+
+      1. ``apply_chat_template(tokenize=False)`` → just the prompt text.
+      2. ``processor(text=..., images=image, return_tensors="pt")``
+         → tokenize + pack pixel_values in one shot, with no double-spec.
+    """
     import torch
     from PIL import Image as PILImage
 
@@ -803,19 +840,15 @@ def _generate_hf(handle, user_content: str, image_path: str | None, max_new_toke
     if image_path and Path(image_path).exists():
         image = PILImage.open(image_path).convert("RGB")
 
-    if image is not None:
-        inputs = handle.processor.apply_chat_template(
-            messages, add_generation_prompt=True,
-            tokenize=True, return_tensors="pt",
-            return_dict=True, images=[image],
-        )
-    else:
-        inputs = handle.processor.apply_chat_template(
-            messages, add_generation_prompt=True,
-            tokenize=True, return_tensors="pt",
-            return_dict=True,
-        )
+    prompt_text = handle.processor.apply_chat_template(
+        messages, add_generation_prompt=True, tokenize=False,
+    )
 
+    proc_kwargs = {"text": prompt_text, "return_tensors": "pt"}
+    if image is not None:
+        proc_kwargs["images"] = image
+
+    inputs = handle.processor(**proc_kwargs)
     inputs = {k: v.to(handle.model.device) if hasattr(v, "to") else v for k, v in inputs.items()}
 
     with torch.no_grad():
@@ -988,14 +1021,29 @@ def main():
                              "catastrophic-forgetting story is corrupted by "
                              "measurement artifact rather than real drift.")
     parser.add_argument("--domains", type=str, nargs="+",
-                        default=["plant", "llava", "mmlu", "aime", "refusal", "text_chat"],
-                        help="Domains to evaluate (default: all)")
+                        default=["plant", "mmlu", "aime", "refusal", "llava"],
+                        help="Domains to evaluate. Default: "
+                             "plant + mmlu + aime + refusal + llava (5). "
+                             "text_chat is opt-in — it overlaps llava as an "
+                             "open-ended canary and was dropped from the "
+                             "default to keep the run lean. Add it back "
+                             "explicitly when you want the smoltalk drift "
+                             "signal: --domains plant mmlu aime refusal "
+                             "llava text_chat.")
+    parser.add_argument("--plant_eval_file", type=Path, default=None,
+                        help="Path to the plant-domain eval JSONL. "
+                             "Default: <eval_dir>/plantae_plant_300.jsonl "
+                             "(NA-Plantae, current training distribution). "
+                             "Pass <eval_dir>/plantnet_plant_100.jsonl to "
+                             "score against the legacy PlantNet-300K v1.0 "
+                             "frozen benchmark.")
     parser.add_argument("--plant_image_root", type=Path, default=None,
                         help="Root directory that holds plant images referenced "
-                             "by plant_100.jsonl's relative ``image`` paths "
-                             "(``<species_id>/<hash>.jpg``). Required for the "
-                             "plant domain unless the JSONL ships absolute "
-                             "paths that already exist on this machine. "
+                             "by --plant_eval_file's relative ``image`` paths "
+                             "(``<species_id>/<hash>.jpg``). Required only when "
+                             "the JSONL uses relative paths (PlantNet-style); "
+                             "the default NA-Plantae set ships absolute paths "
+                             "and does not need this flag. "
                              "Env var fallback: PLANT_IMAGE_ROOT.")
     parser.add_argument("--mix_image_root", type=Path, default=None,
                         help="Root directory holding the mix-bucket images "
@@ -1054,9 +1102,12 @@ def main():
                 default_mix_root,
             )
 
-    # Discover eval files
+    # Discover eval files. Plant domain defaults to the NA-Plantae set
+    # (current training distribution); pass --plant_eval_file to swap
+    # in plantnet_plant_100.jsonl for the legacy benchmark.
+    plant_eval_file = args.plant_eval_file or (args.eval_dir / "plantae_plant_300.jsonl")
     eval_files = {
-        "plant": args.eval_dir / "plant_100.jsonl",
+        "plant": plant_eval_file,
         "llava": args.eval_dir / "llava_40.jsonl",
         "mmlu": args.eval_dir / "mmlu_50.jsonl",
         "aime": args.eval_dir / "aime_20.jsonl",
