@@ -35,7 +35,7 @@ from data_mix.src.llava_sampler import (
     open_llava_stream,
     sample_llava_records,
 )
-from data_mix.src.na_trees_sampler import sample_na_trees_records
+from data_mix.src.na_plantae_sampler import sample_na_plantae_records
 from data_mix.src.negative_builder import build_negative_records
 from data_mix.src.offline_qa_sampler import sample_offline_qa_records
 from data_mix.src.plant_sampler import (
@@ -64,8 +64,8 @@ NONPLANT_SOURCES = frozenset({"cambrian", "llava", "smoltalk"})
 @dataclass(frozen=True)
 class MixConfig:
     source: str                      # "cambrian" (v1) | "llava" (v2)
-    # v4: plant (PlantNet) bucket is optional — NA-trees-backed mixes
-    # omit it entirely (na_trees becomes the species-ID source). When
+    # v4: plant (PlantNet) bucket is optional — NA-Plantae-backed mixes
+    # omit it entirely (na_plantae becomes the species-ID source). When
     # omitted from the yaml, all three plant_* fields default to 0 and
     # the sampler is skipped.
     plant_train: int
@@ -87,14 +87,14 @@ class MixConfig:
     # bit-identical to their previous output.
     offline_qa_path: str | None = None
     offline_qa_val_ratio: float = 0.1
-    # v4: na_trees bucket — optional, sits alongside the main plant
-    # bucket. Records get ``source: "na_trees"`` stamped and route into
+    # v4: na_plantae bucket — optional, sits alongside the main plant
+    # bucket. Records get ``source: "na_plantae"`` stamped and route into
     # the ``plant`` val partition (both are image-bearing species ID).
-    # Skipped entirely when na_trees_train_jsonl is None.
-    na_trees_train: int = 0
-    na_trees_val: int = 0
-    na_trees_train_jsonl: str | None = None
-    na_trees_val_jsonl: str | None = None
+    # Skipped entirely when na_plantae_train_jsonl is None.
+    na_plantae_train: int = 0
+    na_plantae_val: int = 0
+    na_plantae_train_jsonl: str | None = None
+    na_plantae_val_jsonl: str | None = None
 
 
 def _load_config(path: Path) -> MixConfig:
@@ -122,7 +122,7 @@ def _load_config(path: Path) -> MixConfig:
         if not offline_qa_path.is_absolute():
             offline_qa_path = HIKECOMPANION_ROOT / offline_qa_path
         offline_qa_path = str(offline_qa_path.resolve())
-    na_trees_section = raw.get("na_trees") or {}
+    na_plantae_section = raw.get("na_plantae") or {}
     # v4: ``plant`` is optional. Absent -> 0/0/0 (skip sampler entirely).
     plant_section = raw.get("plant") or {}
     return MixConfig(
@@ -139,10 +139,10 @@ def _load_config(path: Path) -> MixConfig:
         seed=raw["seed"],
         offline_qa_path=offline_qa_path,
         offline_qa_val_ratio=float(offline_qa_section.get("val_ratio", 0.1)),
-        na_trees_train=int(na_trees_section.get("train", 0)),
-        na_trees_val=int(na_trees_section.get("val", 0)),
-        na_trees_train_jsonl=na_trees_section.get("train_jsonl"),
-        na_trees_val_jsonl=na_trees_section.get("val_jsonl"),
+        na_plantae_train=int(na_plantae_section.get("train", 0)),
+        na_plantae_val=int(na_plantae_section.get("val", 0)),
+        na_plantae_train_jsonl=na_plantae_section.get("train_jsonl"),
+        na_plantae_val_jsonl=na_plantae_section.get("val_jsonl"),
     )
 
 
@@ -195,8 +195,8 @@ def _partition_val_by_source(val_records: List[dict]) -> Dict[str, List[dict]]:
     }
     for rec in val_records:
         src = rec["source"]
-        if src in ("plant", "na_trees"):
-            # v4: na_trees rides alongside plant in the val partition —
+        if src in ("plant", "na_plantae"):
+            # v4: na_plantae rides alongside plant in the val partition —
             # both are image-bearing species ID and share the same
             # "degradation watch" eval semantics.
             out["plant"].append(rec)
@@ -221,7 +221,7 @@ def build_mix(config_path: Path) -> Path:
 
     # --- Plant (PlantNet) ---
     # v4: skipped entirely when the yaml omits the ``plant`` bucket OR
-    # sets all three plant_* fields to 0. NA-trees-backed mixes use this
+    # sets all three plant_* fields to 0. NA-Plantae-backed mixes use this
     # path to drop PlantNet without touching the rest of the pipeline.
     plant_train: List[dict] = []
     plant_val: List[dict] = []
@@ -265,7 +265,7 @@ def build_mix(config_path: Path) -> Path:
     else:
         log.info(
             "Plant bucket: skipped (plant.train=0 and plant.val=0). "
-            "NA-trees / general buckets carry the load."
+            "NA-Plantae / general buckets carry the load."
         )
 
     # --- smoltalk (text-only; image=None) ---
@@ -329,78 +329,78 @@ def build_mix(config_path: Path) -> Path:
             len(offline_qa_train), len(offline_qa_val),
         )
 
-    # --- v4: na_trees bucket (optional, oversample-friendly). Skipped
-    # entirely when cfg.na_trees_train_jsonl is None so v1/v2/v3 configs
+    # --- v4: na_plantae bucket (optional, oversample-friendly). Skipped
+    # entirely when cfg.na_plantae_train_jsonl is None so v1/v2/v3 configs
     # are bit-identical to their previous output.
-    na_trees_train: List[dict] = []
-    na_trees_val: List[dict] = []
-    if cfg.na_trees_train_jsonl and (cfg.na_trees_train > 0 or cfg.na_trees_val > 0):
-        na_trees_train_path = Path(cfg.na_trees_train_jsonl)
-        if not na_trees_train_path.is_absolute():
-            na_trees_train_path = HIKECOMPANION_ROOT / na_trees_train_path
-        if not na_trees_train_path.exists():
+    na_plantae_train: List[dict] = []
+    na_plantae_val: List[dict] = []
+    if cfg.na_plantae_train_jsonl and (cfg.na_plantae_train > 0 or cfg.na_plantae_val > 0):
+        na_plantae_train_path = Path(cfg.na_plantae_train_jsonl)
+        if not na_plantae_train_path.is_absolute():
+            na_plantae_train_path = HIKECOMPANION_ROOT / na_plantae_train_path
+        if not na_plantae_train_path.exists():
             raise FileNotFoundError(
-                f"na_trees train JSONL not found: {na_trees_train_path}"
+                f"na_plantae train JSONL not found: {na_plantae_train_path}"
             )
 
         # Val handling — eval/train leakage guard:
-        # * If na_trees_val > 0, require a distinct val JSONL. We never
+        # * If na_plantae_val > 0, require a distinct val JSONL. We never
         #   silently sample val records from the train pool: that would
         #   make eval_<key>_loss measure memorisation rather than
         #   degradation.
         # * Default fallback: sibling ``val.jsonl`` next to the train
-        #   JSONL (matches the prepare_na_trees.py output layout).
-        # * If the operator wants train-only with no na_trees val, set
-        #   ``na_trees.val: 0`` in the yaml.
-        na_trees_val_path: Path | None = None
-        if cfg.na_trees_val > 0:
-            if cfg.na_trees_val_jsonl:
-                na_trees_val_path = Path(cfg.na_trees_val_jsonl)
-                if not na_trees_val_path.is_absolute():
-                    na_trees_val_path = HIKECOMPANION_ROOT / na_trees_val_path
+        #   JSONL (matches the prepare_na_plantae.py output layout).
+        # * If the operator wants train-only with no na_plantae val, set
+        #   ``na_plantae.val: 0`` in the yaml.
+        na_plantae_val_path: Path | None = None
+        if cfg.na_plantae_val > 0:
+            if cfg.na_plantae_val_jsonl:
+                na_plantae_val_path = Path(cfg.na_plantae_val_jsonl)
+                if not na_plantae_val_path.is_absolute():
+                    na_plantae_val_path = HIKECOMPANION_ROOT / na_plantae_val_path
             else:
-                na_trees_val_path = na_trees_train_path.parent / "val.jsonl"
-            if not na_trees_val_path.exists():
+                na_plantae_val_path = na_plantae_train_path.parent / "val.jsonl"
+            if not na_plantae_val_path.exists():
                 raise FileNotFoundError(
-                    f"na_trees val JSONL not found: {na_trees_val_path}. "
-                    f"Set na_trees.val_jsonl in the config or place a "
-                    f"val.jsonl next to {na_trees_train_path}, OR set "
-                    f"na_trees.val: 0 to skip the bucket's val slice."
+                    f"na_plantae val JSONL not found: {na_plantae_val_path}. "
+                    f"Set na_plantae.val_jsonl in the config or place a "
+                    f"val.jsonl next to {na_plantae_train_path}, OR set "
+                    f"na_plantae.val: 0 to skip the bucket's val slice."
                 )
-            if na_trees_val_path.resolve() == na_trees_train_path.resolve():
+            if na_plantae_val_path.resolve() == na_plantae_train_path.resolve():
                 raise ValueError(
-                    "na_trees val JSONL resolves to the same path as "
+                    "na_plantae val JSONL resolves to the same path as "
                     "train JSONL — that would sample val records from "
                     "the train pool (eval leakage). Set a distinct "
-                    "na_trees.val_jsonl or na_trees.val: 0."
+                    "na_plantae.val_jsonl or na_plantae.val: 0."
                 )
 
-        # When na_trees_val == 0 we still need *some* val path to satisfy
+        # When na_plantae_val == 0 we still need *some* val path to satisfy
         # the sampler signature; pass an empty list shim by reading the
         # train JSONL but slicing 0 records out of it. The sampler short-
         # circuits on n_val=0 so no records actually come back.
-        na_trees_train, na_trees_val = sample_na_trees_records(
-            train_jsonl=na_trees_train_path,
-            val_jsonl=na_trees_val_path or na_trees_train_path,
-            n_train=cfg.na_trees_train,
-            n_val=cfg.na_trees_val,
+        na_plantae_train, na_plantae_val = sample_na_plantae_records(
+            train_jsonl=na_plantae_train_path,
+            val_jsonl=na_plantae_val_path or na_plantae_train_path,
+            n_train=cfg.na_plantae_train,
+            n_val=cfg.na_plantae_val,
             seed=cfg.seed,
         )
         log.info(
-            "na_trees bucket: %d train (%s) / %d val (%s)",
-            len(na_trees_train), na_trees_train_path,
-            len(na_trees_val),
-            na_trees_val_path if na_trees_val_path else "<no val>",
+            "na_plantae bucket: %d train (%s) / %d val (%s)",
+            len(na_plantae_train), na_plantae_train_path,
+            len(na_plantae_val),
+            na_plantae_val_path if na_plantae_val_path else "<no val>",
         )
 
     # --- Combine and shuffle ---
     train_all = (
         plant_train + gen_train + smol_train + neg_train
-        + offline_qa_train + na_trees_train
+        + offline_qa_train + na_plantae_train
     )
     val_all = (
         plant_val + gen_val + smol_val + neg_val
-        + offline_qa_val + na_trees_val
+        + offline_qa_val + na_plantae_val
     )
     rng.shuffle(train_all)
     rng.shuffle(val_all)

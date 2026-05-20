@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare the NA-trees supplement / primary dataset.
+"""Prepare the NA-Plantae supplement / primary dataset.
 
 Produces ``{train,val,test}.jsonl`` files in the same schema as
 ``finetune/src/prepare_plantnet.py``::
@@ -14,14 +14,14 @@ Produces ``{train,val,test}.jsonl`` files in the same schema as
 
 Reads species descriptions from a YAML file (operator-supplied; one
 record per slug with at minimum ``slug``, ``common_name``, ``species``,
-``family``, ``answer`` fields — see ``assets/na_trees/descriptions.yaml``
+``family``, ``answer`` fields — see ``assets/na_plantae/descriptions.yaml``
 for the canonical schema). Each species folder under ``--source_root``
 is matched by slug. Species that don't have a description entry are
-skipped with a WARN (typical when ``na_tree_fetch.py`` pulls all
+skipped with a WARN (typical when ``na_plantae_fetch.py`` pulls all
 Plantae in a region — the fetcher does not curate by species).
 
 Source layouts (auto-detected):
-  * **split**  (current na_tree_fetch.py output):
+  * **split**  (current na_plantae_fetch.py output):
         <source_root>/{train,val,test}/<slug>/<file>.jpg
     The split boundary is respected (the fetcher already split
     per-observation_id to avoid train/test leakage).
@@ -31,16 +31,16 @@ Source layouts (auto-detected):
     ``--train_per_species`` / ``--val_per_species`` / ``--test_per_species``.
 
 Storage convention: defaults sit OUTSIDE the repo at
-``<repo>/../data/inaturalist_na_trees{,_prepared}/``. Override via the
+``<repo>/../data/inaturalist_na_plantae{,_prepared}/``. Override via the
 CLI flags or via the ``TRAILOGY_DATA_ROOT`` env var (consumed by
 ``data_mix.src.env_paths``).
 
 Usage::
 
-    python -m data_mix.src.prepare_na_trees \\
-        --source_root  $TRAILOGY_DATA_ROOT/inaturalist_na_trees \\
-        --descriptions assets/na_trees/descriptions.yaml \\
-        --output_dir   $TRAILOGY_DATA_ROOT/inaturalist_na_trees_prepared \\
+    python -m data_mix.src.prepare_na_plantae \\
+        --source_root  $TRAILOGY_DATA_ROOT/inaturalist_na_plantae \\
+        --descriptions assets/na_plantae/descriptions.yaml \\
+        --output_dir   $TRAILOGY_DATA_ROOT/inaturalist_na_plantae_prepared \\
         --resize_to 960x672
 
 ``--resize_to`` mirrors ``prepare_plantnet.py`` — pre-resize every image
@@ -75,7 +75,7 @@ import yaml  # type: ignore
 # Default external paths derived via env_paths so they stay in sync
 # with the rest of the data_mix toolchain. Imported lazily inside
 # main() (so module import does not depend on env vars being set).
-log = logging.getLogger("prepare_na_trees")
+log = logging.getLogger("prepare_na_plantae")
 
 QUESTION_TEMPLATES = [
     "What plant is this?",
@@ -173,7 +173,7 @@ def discover_species_images_split(
     if dropped:
         log.warning(
             "Skipping %d fetched species without descriptions (extend "
-            "assets/na_trees/descriptions.yaml to include them): %s",
+            "assets/na_plantae/descriptions.yaml to include them): %s",
             len(dropped),
             ", ".join(sorted(dropped)[:10])
             + (" ..." if len(dropped) > 10 else ""),
@@ -360,10 +360,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     _ext = external_data_root()
-    default_source = _ext / "inaturalist_na_trees"
-    default_output = _ext / "inaturalist_na_trees_prepared"
+    default_source = _ext / "inaturalist_na_plantae"
+    default_output = _ext / "inaturalist_na_plantae_prepared"
     default_descriptions = (
-        HIKECOMPANION_ROOT / "assets" / "na_trees" / "descriptions.yaml"
+        HIKECOMPANION_ROOT / "assets" / "na_plantae" / "descriptions.yaml"
     )
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])

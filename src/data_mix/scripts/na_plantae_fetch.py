@@ -2,7 +2,7 @@
 """Fetch plant observations from iNaturalist.
 
 **Default scope: US-wide research-grade Plantae, stratified by species.**
-We diverged from the upstream-reference ``na_tree_fetch.py`` (Pittsburgh
+We diverged from the upstream-reference ``na_plantae_fetch.py`` (Pittsburgh
 regional + flat `created_at desc` pagination) for two reasons:
 
   1. A tight regional sweep returns ~4-8 species (recent test: 4
@@ -42,7 +42,7 @@ Default request params::
     }
 
 Output layout (default ``--output-dir`` is
-``<repo>/../data/inaturalist_na_trees/``, the Trailogy convention —
+``<repo>/../data/inaturalist_na_plantae/``, the Trailogy convention —
 relocate the whole external data root via ``TRAILOGY_DATA_ROOT``)::
 
     <output_dir>/
@@ -62,13 +62,13 @@ Usage::
 
     # Default sweep — US-wide research-grade Plantae, stop at
     # ~150 species. Downloads images into <output_dir>/{train,val,test}/.
-    python src/data_mix/scripts/na_tree_fetch.py
+    python src/data_mix/scripts/na_plantae_fetch.py
 
     # Same sweep, metadata only (no image bytes on disk).
-    python src/data_mix/scripts/na_tree_fetch.py --no-download
+    python src/data_mix/scripts/na_plantae_fetch.py --no-download
 
     # Pittsburgh-only example (matches the upstream reference's scope).
-    python src/data_mix/scripts/na_tree_fetch.py \\
+    python src/data_mix/scripts/na_plantae_fetch.py \\
         --place-id 0 --lat 40.4406 --lng -79.9959 --radius 80
 
 Network: 1 species_counts call + N per-taxon obs fetches, 0.5-1 s
@@ -114,7 +114,7 @@ PLACE_ID_CONTIGUOUS_US = 46   # Contiguous USA (sometimes called "Lower 48")
 # under Animalia).
 TAXON_ID_PLANTAE = 47126
 
-# --- Default request params. Reference ``na_tree_fetch.py`` was
+# --- Default request params. Reference ``na_plantae_fetch.py`` was
 #     Pittsburgh-only with flat pagination; we relax to US-wide
 #     species-stratified sampling by default to lift the species count
 #     from ~4-8 (single-region) or ~35 (flat-paginated US) to ~150+.
@@ -141,24 +141,80 @@ DEFAULT_OBS_PER_SPECIES = 50
 # Backward-compat alias: some callers still import ``BASE``.
 BASE = OBS_URL
 
-# Default cache lives OUTSIDE the repo at ``<repo>/../data/inaturalist_na_trees/``
+# Default cache lives OUTSIDE the repo at ``<repo>/../data/inaturalist_na_plantae/``
 # (sibling-of-repo convention shared with env_paths.py). Override via
 # the ``--output-dir`` CLI flag or by symlinking ``<repo>/../data/`` to
 # wherever real storage lives.
 #
-# script path: <repo>/src/data_mix/scripts/na_tree_fetch.py
+# script path: <repo>/src/data_mix/scripts/na_plantae_fetch.py
 #   parents[3] = <repo>
 #   parents[3].parent = <repo>'s parent (= external data root parent)
 _SCRIPT_REPO = Path(__file__).resolve().parents[3]
-DEFAULT_OUTPUT_DIR = _SCRIPT_REPO.parent / "data" / "inaturalist_na_trees"
+DEFAULT_OUTPUT_DIR = _SCRIPT_REPO.parent / "data" / "inaturalist_na_plantae"
 
 # Default 80/10/10 split, mirrors the per-species counts in the legacy
-# prepare_na_trees recipe (40 train / 5 val / 5 test out of 50).
+# prepare_na_plantae recipe (40 train / 5 val / 5 test out of 50).
 DEFAULT_SPLIT_RATIOS = (0.80, 0.10, 0.10)
 SPLIT_NAMES = ("train", "val", "test")
 
 HTTP_TIMEOUT_SEC = 30.0
 INTER_PAGE_SLEEP_SEC = 1.0
+# iNaturalist publishes a soft cap of ~60 requests/minute for /v1/*.
+# Empirically ~40 req/min still trips 429 normal_throttling under sustained
+# load, so we target a conservative ~30 req/min (= 2.0 s between calls)
+# for the metadata walk. Image downloads go to a different host
+# (static.inaturalist.org) and are not counted here.
+INTER_TAXON_SLEEP_SEC = 2.0
+# 429 retry policy. iNat's response sometimes includes a Retry-After
+# header in seconds; we honour it when present, otherwise back off
+# exponentially starting at this base.
+HTTP_RETRY_MAX_ATTEMPTS = 5
+HTTP_RETRY_BASE_SEC     = 10.0
+
+
+def _get_with_retry(
+    url: str, params: dict[str, Any] | None = None,
+) -> requests.Response:
+    """``requests.get`` with HTTP 429 / 5xx retry-with-backoff.
+
+    On 429 we honour the ``Retry-After`` response header (iNat sets
+    this on sustained-throttle events); on other transient errors we
+    use exponential backoff. After HTTP_RETRY_MAX_ATTEMPTS we re-raise
+    so the caller sees the original error.
+    """
+    last_exc: Exception | None = None
+    delay = HTTP_RETRY_BASE_SEC
+    for attempt in range(1, HTTP_RETRY_MAX_ATTEMPTS + 1):
+        try:
+            r = requests.get(url, params=params, timeout=HTTP_TIMEOUT_SEC)
+            if r.status_code == 429 or r.status_code >= 500:
+                # Surface as exception so the retry branch below runs.
+                retry_after = r.headers.get("Retry-After")
+                wait = float(retry_after) if retry_after else delay
+                print(
+                    f"  [retry {attempt}/{HTTP_RETRY_MAX_ATTEMPTS}] "
+                    f"HTTP {r.status_code} on {url} — sleeping {wait:.1f}s",
+                    flush=True,
+                )
+                time.sleep(wait)
+                delay = min(delay * 2, 120.0)
+                continue
+            r.raise_for_status()
+            return r
+        except requests.RequestException as exc:
+            last_exc = exc
+            if attempt >= HTTP_RETRY_MAX_ATTEMPTS:
+                break
+            print(
+                f"  [retry {attempt}/{HTTP_RETRY_MAX_ATTEMPTS}] "
+                f"{type(exc).__name__}: {exc} — sleeping {delay:.1f}s",
+                flush=True,
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 120.0)
+    raise last_exc if last_exc else RuntimeError(
+        f"_get_with_retry: exhausted retries for {url}"
+    )
 
 
 def slugify(name: str) -> str:
@@ -212,12 +268,27 @@ def fetch_top_species(
 
     Returns a list of taxon dicts (keys: ``id``, ``name``,
     ``preferred_common_name``, ``rank``) for the top ``n_species``.
+
+    Pagination dedup: iNat's ``species_counts`` does NOT guarantee a
+    stable per-row ordering across pages — when many species tie on
+    ``observations_count`` (large 17K-obs plateau under our Plantae
+    filter), a given species can land on page 1 AND page 2. Empirically
+    ~20% of raw rows duplicate between pages 1 and 2 at per_page=500.
+    Without dedup the caller silently gets fewer unique species than
+    requested. We track ``taxon.id`` in a ``seen`` set and only count
+    fresh IDs toward ``n_species``. We also keep ``per_page`` pinned to
+    the API max (500) so each round-trip pulls maximum new material;
+    shrinking per_page near the end stalls when remaining slots happen
+    to be filled with duplicates.
     """
     out: list[dict[str, Any]] = []
+    seen: set[int] = set()
     page = 1
     while len(out) < n_species:
         params = dict(base_params)
-        params["per_page"] = min(500, n_species - len(out))
+        # Always request the API max — dedup means some rows are dropped
+        # and we want each request to maximize fresh species per RTT.
+        params["per_page"] = 500
         params["page"] = page
         # ``species_counts`` has its own ordering convention
         # (``observations_count desc`` by default). Forwarding the
@@ -229,18 +300,19 @@ def fetch_top_species(
         # ``photos=true`` filters out photo-less obs from the count too,
         # so the species we discover are exactly the ones we can then
         # download images for.
-        r = requests.get(
-            SPECIES_COUNTS_URL, params=params, timeout=HTTP_TIMEOUT_SEC,
-        )
-        r.raise_for_status()
+        r = _get_with_retry(SPECIES_COUNTS_URL, params=params)
         results = r.json().get("results", []) or []
         if not results:
             break
         for rec in results:
             taxon = rec.get("taxon") or {}
-            if not taxon.get("id"):
+            tid = taxon.get("id")
+            if not tid or tid in seen:
                 continue
+            seen.add(tid)
             out.append(taxon)
+            if len(out) >= n_species:
+                break
         page += 1
         if len(out) >= n_species:
             break
@@ -270,10 +342,7 @@ def fetch_observations_for_taxon(
     while len(out) < max_obs and page <= max_pages_per_taxon:
         params["page"] = page
         params["per_page"] = min(200, max_obs - len(out))
-        r = requests.get(
-            OBS_URL, params=params, timeout=HTTP_TIMEOUT_SEC,
-        )
-        r.raise_for_status()
+        r = _get_with_retry(OBS_URL, params=params)
         results = r.json().get("results", []) or []
         if not results:
             break
@@ -374,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
         help=f"Top-level output dir (kept OUTSIDE the repo). "
              f"Contains observations.jsonl, fetch_report.json, and "
              f"train/val/test/<slug>/<obs>_<idx>.jpg subtrees. "
-             f"Default: <repo>/../data/inaturalist_na_trees/ "
+             f"Default: <repo>/../data/inaturalist_na_plantae/ "
              f"(resolved at script-load time to "
              f"{str(DEFAULT_OUTPUT_DIR)!r}).",
     )
@@ -558,6 +627,9 @@ def main(argv: list[str] | None = None) -> int:
                 f"+{len(obs)} obs (running total {len(observations)})",
                 flush=True,
             )
+        # Inter-taxon throttle: keeps us well under iNat's 60 req/min cap.
+        if i < len(top_taxa):
+            time.sleep(INTER_TAXON_SLEEP_SEC)
     photo_records = flatten_photos(
         observations,
         seed=args.seed,

@@ -1,4 +1,4 @@
-# North American tree descriptions for the NA-trees eyeball eval +
+# North American tree descriptions for the NA-Plantae eyeball eval +
 # data_mix supplement. Schema mirrors the relevant subset of
 # `PlantNet-300K-data-v2/species_metadata_enriched.csv` plus a
 # pre-formatted ``answer`` field that drops straight into the existing

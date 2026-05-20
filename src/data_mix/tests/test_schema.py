@@ -26,7 +26,7 @@ def test_allowed_sources_exact():
     # v3 added 'offline_qa' as a valid source (tiny persona-shaping
     # corpus sourced from assets/data_offline_qa/offline_qa.json).
     assert ALLOWED_SOURCES == {
-        "plant", "na_trees", "cambrian", "llava",
+        "plant", "na_plantae", "cambrian", "llava",
         "smoltalk", "negative", "offline_qa",
     }
 

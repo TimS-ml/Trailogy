@@ -1,8 +1,8 @@
-"""Sample NA trees records from the prepared na_trees JSONL.
+"""Sample NA Plantae records from the prepared na_plantae JSONL.
 
-Since the NA trees dataset is small (~440 train, ~55 val), this sampler
+Since the NA Plantae dataset is small (~440 train, ~55 val), this sampler
 oversamples (repeats) records to hit the requested count. Each record
-gets ``source: "na_trees"`` stamped before returning.
+gets ``source: "na_plantae"`` stamped before returning.
 """
 from __future__ import annotations
 
@@ -22,29 +22,29 @@ def _read_jsonl(path: Path) -> List[dict]:
     return rows
 
 
-def sample_na_trees_records(
+def sample_na_plantae_records(
     train_jsonl: Path,
     val_jsonl: Path,
     n_train: int,
     n_val: int,
     seed: int,
 ) -> Tuple[List[dict], List[dict]]:
-    """Read na_trees train/val JSONLs, stamp source, oversample to target counts."""
+    """Read na_plantae train/val JSONLs, stamp source, oversample to target counts."""
     rng = random.Random(seed)
 
     train_raw = _read_jsonl(train_jsonl)
     val_raw = _read_jsonl(val_jsonl)
 
     if not train_raw:
-        raise RuntimeError(f"na_trees train JSONL is empty: {train_jsonl}")
+        raise RuntimeError(f"na_plantae train JSONL is empty: {train_jsonl}")
     if not val_raw:
-        raise RuntimeError(f"na_trees val JSONL is empty: {val_jsonl}")
+        raise RuntimeError(f"na_plantae val JSONL is empty: {val_jsonl}")
 
     # Stamp source on every record
     for rec in train_raw:
-        rec["source"] = "na_trees"
+        rec["source"] = "na_plantae"
     for rec in val_raw:
-        rec["source"] = "na_trees"
+        rec["source"] = "na_plantae"
 
     # Oversample train
     train_out: List[dict] = []

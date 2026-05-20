@@ -2,7 +2,7 @@
 # Build a data mix. All storage roots are env-driven with safe in-repo
 # defaults; operator overrides via environment.
 #
-# Default CONFIG = NA-trees-backed mix-50k.yaml. For the PlantNet-only
+# Default CONFIG = NA-Plantae-backed mix-50k.yaml. For the PlantNet-only
 # 1.0 recipe, set CONFIG=$DATA_MIX_DIR/configs/mix-50k-plantnet.yaml.
 set -euo pipefail
 
@@ -28,7 +28,7 @@ echo
 
 # Pre-flight: PlantNet JSONL is REQUIRED only when the chosen CONFIG
 # actually uses the plant bucket (plant.train > 0 OR plant.val > 0).
-# NA-trees-only mixes skip the plant bucket entirely.
+# NA-Plantae-only mixes skip the plant bucket entirely.
 #
 # We grep the CONFIG for an integer plant.{train,val} > 0 to decide.
 # Operators with a yaml that uses jinja / anchors should set the env

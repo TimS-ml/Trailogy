@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Quick NA-tree-ID eyeball test against a SFT'd Gemma 4 E2B MLX checkpoint.
+"""Quick NA-Plantae-ID eyeball test against a SFT'd Gemma 4 E2B MLX checkpoint.
 
 Mirrors ``src/finetune/src/evaluate.py``'s eval contract: the model
 was trained with a v4 conditional-FT camera-state gate
@@ -12,7 +12,7 @@ Input
 -----
 Auto-detects two layouts under ``--images-dir``:
 
-  - **subfolder layout** (na_trees default): ``<slug>/<NN>.<ext>``
+  - **subfolder layout** (na_plantae default): ``<slug>/<NN>.<ext>``
     (e.g. ``red_maple/003.jpg``). Slug = subfolder name. Used as-is
     for matching, also normalised to ``red-maple`` and ``Red Maple``.
   - **flat layout**: ``<slug>-<N>.<ext>`` directly under
@@ -23,7 +23,7 @@ Both slugs ``red_maple`` and ``red-maple`` are accepted; underscores
 and hyphens are interchangeable for the match check.
 
 If ``--descriptions`` is given (yaml at
-``assets/na_trees/descriptions.yaml``), the matcher additionally
+``assets/na_plantae/descriptions.yaml``), the matcher additionally
 accepts the species' ``common_name`` and ``species`` (Latin name)
 substrings — gives less noisy precision/recall on long natural-
 language replies.
@@ -37,12 +37,12 @@ Output
 Usage
 -----
     # Local MLX dir
-    python src/data_mix/scripts/test_na_trees.py \\
+    python src/data_mix/scripts/test_na_plantae.py \\
         --model-path <local-mlx-dir> \\
         --model-tag r16-a16-step20000_g64_noaudio
 
     # HF model id (downloads to HF cache on first run)
-    python src/data_mix/scripts/test_na_trees.py \\
+    python src/data_mix/scripts/test_na_plantae.py \\
         --model-path <repo-owner>/gemma-4-E2B/r16-a16-nokl-step20000_mlx_g64_noaudio \\
         --model-tag r16-a16-step20000_g64_noaudio
 
@@ -71,7 +71,7 @@ DEFAULT_CAMERA_PREFIX = "[camera=on] "
 
 # A neutral "what is this plant?" prompt — matches the most common
 # question in ``src/finetune/src/prepare_plantnet.py:QUESTION_TEMPLATES``
-# (and ``src/data_mix/src/prepare_na_trees.py:QUESTION_TEMPLATES``).
+# (and ``src/data_mix/src/prepare_na_plantae.py:QUESTION_TEMPLATES``).
 DEFAULT_PROMPT = "What plant is this?"
 
 
@@ -170,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="Short label for the JSON output file (no slashes).",
     )
-    # script path: <repo>/src/data_mix/scripts/test_na_trees.py
+    # script path: <repo>/src/data_mix/scripts/test_na_plantae.py
     #   parents[3] -> <repo>
     #   parents[3].parent -> <repo>'s parent (== external data root parent)
     _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -178,31 +178,31 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--images-dir",
         type=Path,
-        default=_EXTERNAL / "inaturalist_na_trees" / "test",
+        default=_EXTERNAL / "inaturalist_na_plantae" / "test",
         help=(
             "Directory of test images. Subfolder layout "
             "(<slug>/<N>.jpg) auto-detected; falls back to flat "
             "<slug>-<N>.<ext>. Default points at the held-out test "
-            "split produced by na_tree_fetch.py: "
-            "<repo>/../data/inaturalist_na_trees/test/."
+            "split produced by na_plantae_fetch.py: "
+            "<repo>/../data/inaturalist_na_plantae/test/."
         ),
     )
     ap.add_argument(
         "--descriptions",
         type=Path,
-        default=_REPO_ROOT / "assets" / "na_trees" / "descriptions.yaml",
+        default=_REPO_ROOT / "assets" / "na_plantae" / "descriptions.yaml",
         help=(
             "Optional yaml of species -> {common_name, species, ...} "
             "for richer match scoring. Default: "
-            "<repo>/assets/na_trees/descriptions.yaml"
+            "<repo>/assets/na_plantae/descriptions.yaml"
         ),
     )
     ap.add_argument(
         "--results-dir",
         type=Path,
-        default=_EXTERNAL / "run_results" / "na_trees_eyeball",
+        default=_EXTERNAL / "run_results" / "na_plantae_eyeball",
         help="Where to write per-run JSON outputs. Default: "
-             "<repo>/../data/run_results/na_trees_eyeball/.",
+             "<repo>/../data/run_results/na_plantae_eyeball/.",
     )
     ap.add_argument(
         "--limit",

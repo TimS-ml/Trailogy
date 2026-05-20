@@ -57,7 +57,7 @@ def test_eval_set_defaults_follow_src_layout() -> None:
     # v4: eval_sets/ -> eval/, evaluate_generality.py -> evaluate_generality_plantnet.py,
     # build_eval_set.py -> build_eval_set_plantnet.py. The PlantNet
     # suffix marks these as the v1.0 legacy benchmark builders; an
-    # NA-trees eval recipe will live at the unsuffixed names later.
+    # NA-Plantae eval recipe will live at the unsuffixed names later.
     build_eval_set = _script_text("eval/build_eval_set_plantnet.py")
     evaluate_generality = _script_text("eval/evaluate_generality_plantnet.py")
 

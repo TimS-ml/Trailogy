@@ -12,10 +12,10 @@ def _script_text(relative_path: str) -> str:
     return (DATA_MIX_DIR / relative_path).read_text()
 
 
-def test_build_mix_default_config_is_na_trees_mix_50k() -> None:
+def test_build_mix_default_config_is_na_plantae_mix_50k() -> None:
     text = _script_text("scripts/build_mix.sh")
 
-    # v2.0 default: NA-trees-backed mix-50k.yaml (no -plantnet suffix).
+    # v2.0 default: NA-Plantae-backed mix-50k.yaml (no -plantnet suffix).
     # The PlantNet recipe is preserved at mix-50k-plantnet.yaml and
     # selected by env: CONFIG=$DATA_MIX_DIR/configs/mix-50k-plantnet.yaml.
     assert (
@@ -38,9 +38,9 @@ def test_mix_50k_plantnet_offline_qa_path_resolves_from_repo_root() -> None:
     )
 
 
-def test_mix_50k_default_is_na_trees_without_plant_bucket() -> None:
+def test_mix_50k_default_is_na_plantae_without_plant_bucket() -> None:
     """The default mix-50k.yaml must drop the PlantNet bucket and use
-    na_trees as the species-ID source. Guards against accidental
+    na_plantae as the species-ID source. Guards against accidental
     regression to a PlantNet-backed default."""
     from data_mix.src.mix import _load_config
 
@@ -48,12 +48,12 @@ def test_mix_50k_default_is_na_trees_without_plant_bucket() -> None:
 
     assert cfg.plant_train == 0
     assert cfg.plant_val == 0
-    assert cfg.na_trees_train > 0
-    assert cfg.na_trees_train_jsonl is not None
+    assert cfg.na_plantae_train > 0
+    assert cfg.na_plantae_train_jsonl is not None
 
 
-def test_mix_50k_na_trees_paths_resolve_outside_repo() -> None:
-    """The default mix-50k.yaml must point at na_trees JSONLs that live
+def test_mix_50k_na_plantae_paths_resolve_outside_repo() -> None:
+    """The default mix-50k.yaml must point at na_plantae JSONLs that live
     OUTSIDE the repo (Trailogy storage convention). Train data inside
     the working tree would silently pollute commits."""
     from data_mix.src.mix import _load_config
@@ -66,7 +66,7 @@ def test_mix_50k_na_trees_paths_resolve_outside_repo() -> None:
     # must include HIKECOMPANION_ROOT.parent (= <repo>'s parent) but
     # NOT HIKECOMPANION_ROOT itself once normalised.
     repo_root = HIKECOMPANION_ROOT.resolve()
-    for raw_path in (cfg.na_trees_train_jsonl, cfg.na_trees_val_jsonl):
+    for raw_path in (cfg.na_plantae_train_jsonl, cfg.na_plantae_val_jsonl):
         assert raw_path is not None
         resolved = (repo_root / raw_path).resolve()
         try:
@@ -76,7 +76,7 @@ def test_mix_50k_na_trees_paths_resolve_outside_repo() -> None:
             pass
         else:
             raise AssertionError(
-                f"na_trees JSONL must live OUTSIDE the repo; "
+                f"na_plantae JSONL must live OUTSIDE the repo; "
                 f"{raw_path!r} resolves to {resolved} which is inside "
                 f"{repo_root}."
             )

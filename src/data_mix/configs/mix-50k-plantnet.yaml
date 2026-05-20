@@ -1,7 +1,7 @@
 # data_mix/configs/mix-50k-plantnet.yaml
 #
 # PlantNet-backed 50K-row anti-overtraining mix. The "default"
-# mix-50k.yaml name is reserved for the NA-trees-backed mix going
+# mix-50k.yaml name is reserved for the NA-Plantae-backed mix going
 # forward; this file preserves the v1.0 PlantNet recipe as a
 # benchmark reference.
 #

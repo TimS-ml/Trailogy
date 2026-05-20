@@ -11,7 +11,7 @@ multiple repo clones / branches without churn.
 Concretely, given the repo at ``<base>/Trailogy/``, the defaults are::
 
     <base>/data/
-        inaturalist_na_trees/             # na_tree_fetch.py output
+        inaturalist_na_plantae/             # na_plantae_fetch.py output
             train/<slug>/*.jpg
             val/<slug>/*.jpg
             test/<slug>/*.jpg
@@ -19,7 +19,7 @@ Concretely, given the repo at ``<base>/Trailogy/``, the defaults are::
             observations.jsonl
             fetch_report.json
 
-        inaturalist_na_trees_prepared/    # prepare_na_trees.py output
+        inaturalist_na_plantae_prepared/    # prepare_na_plantae.py output
             {train,val,test}.jsonl        # training-schema JSONLs
             images_resized/{train,val,test}/<slug>/*.jpg
 

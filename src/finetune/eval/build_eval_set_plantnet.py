@@ -2,7 +2,7 @@
 """Build a frozen, diverse generality eval set for quick iteration.
 
 PlantNet-backed eval set builder (v1.0 / legacy benchmark). The default
-species-ID domain is PlantNet's ``plant`` bucket. Once an NA-trees eval
+species-ID domain is PlantNet's ``plant`` bucket. Once an NA-Plantae eval
 recipe ships, that one will live at ``build_eval_set.py`` (no suffix);
 this file is preserved for benchmark continuity.
 
