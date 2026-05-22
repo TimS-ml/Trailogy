@@ -522,3 +522,105 @@ def test_mix_skips_offline_qa_when_path_unset(patched_mix):
     assert not (out / "val_offline_qa.jsonl").exists()
     report = json.loads((out / "build_report.json").read_text())
     assert set(report["paths"]["val_files"].keys()) == {"plant", "nonplant", "negative"}
+
+
+# ---------------------------------------------------------------------------
+# freeze_val_from: hardlink val_*.jsonl from a previous mix output
+# ---------------------------------------------------------------------------
+
+
+def test_freeze_val_from_links_val_files_and_skips_sampling(
+    patched_mix, monkeypatch
+):
+    """When ``freeze_val_from`` resolves to an existing mix output
+    directory, build_mix must:
+
+      * skip val sampling entirely (val partition list empty);
+      * hardlink (or copy) ``val.jsonl`` + ``val_<bucket>.jsonl`` from
+        the source dir into ``output_root``;
+      * record the linkage in ``build_report.json`` under
+        ``frozen_val_from``;
+      * point ``paths.val_files`` at the linked files so the trainer
+        sees the SAME bytes as the source mix's val files.
+    """
+    # First build: a normal mix, used as the freeze source.
+    source_out = patched_mix["output_root"]
+    mix_mod.build_mix(patched_mix["config"])
+    source_val_plant_bytes = (source_out / "val_plant.jsonl").read_bytes()
+    source_val_nonplant_bytes = (source_out / "val_nonplant.jsonl").read_bytes()
+    source_val_negative_bytes = (source_out / "val_negative.jsonl").read_bytes()
+
+    # Second build: same config but with freeze_val_from pointing at
+    # the first output dir. Different output_root.
+    frozen_out = source_out.parent / "out_frozen"
+    monkeypatch.setenv("DATA_MIX_OUTPUT_ROOT", str(frozen_out))
+
+    frozen_config = patched_mix["config"].parent / "mix_frozen.yaml"
+    frozen_config.write_text(
+        "seed: 7\n"
+        # Different train counts vs the source mix to prove the val
+        # files are *not* re-sampled from the new config's parameters.
+        "plant: {train: 25, val: 5, per_class_cap: 3}\n"
+        "cambrian: {train: 8, val: 2}\n"
+        "smoltalk: {train: 8, val: 2}\n"
+        "negative: {train: 4, val: 1}\n"
+        f"freeze_val_from: \"{source_out}\"\n",
+        encoding="utf-8",
+    )
+
+    report_path = mix_mod.build_mix(frozen_config)
+    report = json.loads(report_path.read_text())
+
+    # train was sampled fresh under the new config
+    assert report["train_total"] == 25 + 8 + 8 + 4
+    # val_all (the freshly sampled list) must be empty — val files come
+    # from the freeze source.
+    assert report["val_total"] == 0
+
+    # val files hardlinked / copied from source
+    for name, src_bytes in (
+        ("val_plant.jsonl", source_val_plant_bytes),
+        ("val_nonplant.jsonl", source_val_nonplant_bytes),
+        ("val_negative.jsonl", source_val_negative_bytes),
+    ):
+        dest = frozen_out / name
+        assert dest.exists(), f"freeze did not produce {name}"
+        assert dest.read_bytes() == src_bytes, (
+            f"{name} content drifted between source and frozen build"
+        )
+
+    # report records the freeze source + per-file action
+    assert report["frozen_val_from"] is not None
+    assert report["frozen_val_from"]["source_dir"] == str(source_out)
+    files = report["frozen_val_from"]["files"]
+    assert {"val_plant.jsonl", "val_nonplant.jsonl", "val_negative.jsonl"} <= files.keys()
+    for entry in files.values():
+        assert entry["method"] in ("hardlink", "copy")
+
+    # paths.val_files points at the linked files inside frozen_out
+    assert set(report["paths"]["val_files"].keys()) == {"plant", "nonplant", "negative"}
+    for p in report["paths"]["val_files"].values():
+        assert Path(p).parent == frozen_out
+
+
+def test_freeze_val_from_missing_source_dir_raises(patched_mix, monkeypatch):
+    """A non-existent freeze source must fail loud — silently sampling
+    fresh val records when the operator asked for a freeze would
+    silently break eval comparability across the v1 -> v2 boundary."""
+    frozen_out = patched_mix["output_root"].parent / "out_missing"
+    monkeypatch.setenv("DATA_MIX_OUTPUT_ROOT", str(frozen_out))
+
+    bogus_source = patched_mix["output_root"].parent / "does_not_exist"
+    frozen_config = patched_mix["config"].parent / "mix_missing_freeze.yaml"
+    frozen_config.write_text(
+        "seed: 7\n"
+        "plant: {train: 10, val: 0, per_class_cap: 3}\n"
+        "cambrian: {train: 5, val: 0}\n"
+        "smoltalk: {train: 5, val: 0}\n"
+        "negative: {train: 2, val: 0}\n"
+        f"freeze_val_from: \"{bogus_source}\"\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FileNotFoundError, match="freeze_val_from source"):
+        mix_mod.build_mix(frozen_config)

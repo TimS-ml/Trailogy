@@ -1,0 +1,94 @@
+# data_mix/configs/mix-50k-v2.yaml
+#
+# Second iteration of the local NA-Plantae mix. Differences vs
+# mix-50k.yaml (treated as v1 throughout this config and the
+# accompanying design doc):
+#
+#   bucket          v1 train  v2 train   share v1 -> v2
+#   na_plantae      22,500    30,000     45 % -> 60 %
+#   llava           15,000     7,500     30 % -> 15 %    (deprioritised)
+#   smoltalk         7,500     7,500     15 % -> 15 %    (mmlu defense, absolute count held)
+#   negative         5,000     5,000     10 % -> 10 %
+#   offline_qa      ~38       ~38        out of ratio (unchanged)
+#
+# Total train rows ~ 50,038. Validation is FROZEN from the v1 build
+# (see ``freeze_val_from`` below) so eval_<key>_loss curves stay
+# byte-comparable across the v1 -> v2 boundary.
+#
+# Sampler-side changes:
+#
+#   * ``train_exclude_slugs`` drops 19 NA-Plantae classes from the
+#     train pool only. These are the 8 systematic-shared-drift
+#     victims and their 11 confusion partners surfaced by the r8 /
+#     r16 @ 14k generality eval. The frozen val + the
+#     ``plantae_plant_300.jsonl`` test set are NOT touched, so any
+#     gain on the dropped classes in a future eval is true
+#     generalisation rather than data overlap.
+#
+#   * ``train_temperature: 0.75`` (was 0.5). With min/max per-class
+#     row counts of 32 / 104 in the prepared train pool the natural
+#     class-imbalance ratio is ~3x — square-root tempering (0.5)
+#     overcorrects. 0.75 sits between natural (1.0) and sqrt (0.5)
+#     and mildly compresses the tail without flattening the head.
+#
+#   * Implicit: the sampler now uses Efraimidis-Spirakis
+#     weighted-reservoir (no-replacement) for any
+#     ``train_temperature != 1.0`` call where the target count is
+#     within pool size. The v1 build produced 4,235 duplicate-image
+#     rows out of 22,500 na_plantae rows (some images 6x); v2 will
+#     have zero duplicate images within na_plantae.
+
+seed: 42
+source: llava
+
+# Freeze the trainer-side val files from the v1 mix output. Resolved
+# against TRAILOGY_DATA_ROOT (the default external data root).
+freeze_val_from: "mix-50k"
+
+na_plantae:
+  train: 30000
+  val: 1500            # ignored when freeze_val_from is set
+  train_jsonl: "../data/inaturalist_na_plantae_prepared/train.jsonl"
+  val_jsonl:   "../data/inaturalist_na_plantae_prepared/val.jsonl"
+  train_temperature: 0.75
+  # Slugs removed from the train pool BEFORE sampling. Val is
+  # untouched so eval_plant_loss + the frozen test set still measure
+  # drift on these classes.
+  train_exclude_slugs:
+    # 8 systematic-shared-drift victims (D-doc 12k -> 14k table)
+    - red_osier_dogwood
+    - cutleaf_coneflower
+    - bear_s_foot
+    - giant_reed
+    - catnip
+    - texas_mountain_laurel
+    - coastal_goldenbush
+    - buckbrush
+    # confusion partners (the wrong-but-confident predictions at 14k)
+    - american_black_elderberry
+    - cut_leaved_toothwort
+    - bigleaf_maple
+    - buttonbush
+    - white_vervain
+    - texas_persimmon
+    - gum_bumelia
+    - deerweed
+    - golden_yarrow
+    - yaupon_holly
+    - jojoba
+
+llava:
+  train: 7500
+  val:   750           # ignored when freeze_val_from is set
+
+smoltalk:
+  train: 7500
+  val:   375           # ignored when freeze_val_from is set
+
+negative:
+  train: 5000
+  val:   250           # ignored when freeze_val_from is set
+
+offline_qa:
+  path: "assets/data_offline_qa/offline_qa.json"
+  val_ratio: 0.1       # ignored when freeze_val_from is set

@@ -16,18 +16,35 @@ sampler supports per-class re-weighting via ``train_temperature``:
   * ``train_temperature -> 0`` — fully balanced, every class shows up
     equally often.
 
-Val sampling is always natural (frequency-proportional) so eval loss
-keeps measuring the underlying class distribution.
+Tempered sampling uses Efraimidis-Spirakis weighted-reservoir (no
+replacement) when ``n_train <= len(filtered_pool)``, falling back to
+``random.choices`` (with replacement) only when the target count
+exceeds the available pool size. The old code path used
+``random.choices`` unconditionally; on the production mix-50k v1 build
+that produced ~19 % duplicate-image rows (some images visited 6 times)
+even though the pool was more than 2x larger than the requested count.
+The reservoir variant gives the same expected per-class share without
+the duplicates.
+
+The sampler also accepts a ``train_exclude_slugs`` set, applied to the
+train pool BEFORE weighting. Excluded slugs simply don't enter the
+pool — there is no special-case during sampling. Val sampling is
+intentionally untouched by both ``train_exclude_slugs`` and
+``train_temperature`` so eval loss keeps measuring the underlying
+class distribution.
 
 Records always get a ``source: "na_plantae"`` stamp.
 """
 from __future__ import annotations
 
 import json
+import logging
 import random
 from collections import Counter
 from pathlib import Path
-from typing import List, Tuple
+from typing import Iterable, List, Tuple
+
+log = logging.getLogger("data_mix.na_plantae_sampler")
 
 
 def _read_jsonl(path: Path) -> List[dict]:
@@ -60,17 +77,60 @@ def _natural_oversample(
     return out
 
 
+def _weighted_reservoir(
+    pool: List[dict], weights: List[float], n: int, rng: random.Random,
+) -> List[dict]:
+    """Efraimidis-Spirakis weighted reservoir (no-replacement).
+
+    For each item compute ``key_i = u_i ** (1 / w_i)`` with
+    ``u_i ~ Uniform(0,1)``, then take the n items with the largest
+    keys. Equivalent (in distribution over selected sets) to drawing n
+    items without replacement with per-item probability proportional
+    to ``w_i``. Stdlib-only; same RNG as the rest of the sampler.
+
+    Requires ``n <= len(pool)``. Caller must guarantee that.
+    """
+    assert n <= len(pool), (
+        f"_weighted_reservoir: n={n} exceeds pool size {len(pool)}; "
+        f"caller must dispatch to the with-replacement path instead."
+    )
+    # Slightly inflate any zero weights so log/division is well-defined.
+    # In practice the caller produces strictly-positive weights because
+    # each pool row's class has at least one member (itself), so this
+    # branch is defensive.
+    eps = 1e-12
+    keys = [
+        rng.random() ** (1.0 / max(w, eps))
+        for w in weights
+    ]
+    # Negative key for descending sort (largest key wins). Using a key
+    # function rather than reverse=True avoids a second list build.
+    order = sorted(range(len(pool)), key=lambda i: keys[i], reverse=True)
+    return [pool[i] for i in order[:n]]
+
+
 def _tempered_sample(
     pool: List[dict],
     n: int,
     temperature: float,
     rng: random.Random,
 ) -> List[dict]:
-    """Per-class tempered sampling with replacement.
+    """Per-class tempered sampling.
 
-    For each record, weight = ``n_class[record's slug] ** (T - 1)``.
-    Aggregating across the class then gives expected per-class share
+    For each record, ``weight = n_class[record's slug] ** (T - 1)``.
+    Aggregated across the class, the expected per-class share is
     proportional to ``n_class ** T``.
+
+    Dispatch:
+
+      * ``n <= len(pool)`` — Efraimidis-Spirakis weighted reservoir
+        (no replacement). The expected per-class share matches
+        ``random.choices`` with the same weights, but no image is
+        repeated within the output.
+      * ``n > len(pool)``  — fall back to ``random.choices`` (with
+        replacement). The only way to satisfy a target larger than
+        the pool. Logged as a warning since this is rarely the
+        intent on a multi-tens-of-thousands-row pool.
     """
     if n <= 0 or not pool:
         return []
@@ -79,10 +139,55 @@ def _tempered_sample(
         return []
     exponent = temperature - 1.0
     weights = [counts[rec.get("slug", "")] ** exponent for rec in pool]
-    # random.choices does weighted sampling with replacement — exactly
-    # the behaviour we want (small classes get visited many times,
-    # large classes get down-weighted).
+
+    if n <= len(pool):
+        return _weighted_reservoir(pool, weights, n, rng)
+
+    log.warning(
+        "_tempered_sample: n=%d exceeds pool size %d; "
+        "falling back to with-replacement sampling. Some images "
+        "will appear multiple times in the output.",
+        n, len(pool),
+    )
     return rng.choices(pool, weights=weights, k=n)
+
+
+def _apply_exclude_slugs(
+    pool: List[dict],
+    exclude: Iterable[str] | None,
+) -> List[dict]:
+    """Drop train pool records whose ``slug`` is in ``exclude``.
+
+    Returns the filtered list and logs the per-slug drop counts so
+    operators can confirm the drop list landed on the expected classes.
+    Slugs in ``exclude`` that don't match any record are warned about
+    individually (catches typos in the config without failing the
+    build).
+    """
+    if not exclude:
+        return pool
+    exclude_set = {s for s in exclude if s}
+    if not exclude_set:
+        return pool
+
+    pool_slugs = Counter(rec.get("slug", "") for rec in pool)
+    missing = sorted(s for s in exclude_set if s not in pool_slugs)
+    if missing:
+        log.warning(
+            "na_plantae train_exclude_slugs: %d slug(s) not present in "
+            "pool, ignored: %s",
+            len(missing), missing,
+        )
+
+    filtered = [rec for rec in pool if rec.get("slug", "") not in exclude_set]
+    dropped = len(pool) - len(filtered)
+    matched = sorted(s for s in exclude_set if s in pool_slugs)
+    log.info(
+        "na_plantae train_exclude_slugs: dropped %d records across %d "
+        "matched slug(s): %s",
+        dropped, len(matched), matched,
+    )
+    return filtered
 
 
 def sample_na_plantae_records(
@@ -92,12 +197,17 @@ def sample_na_plantae_records(
     n_val: int,
     seed: int,
     train_temperature: float = 1.0,
+    train_exclude_slugs: Iterable[str] | None = None,
 ) -> Tuple[List[dict], List[dict]]:
     """Read na_plantae train/val JSONLs, stamp source, and sample to
     the requested counts.
 
     ``train_temperature`` controls per-class re-weighting on the train
-    pool (see module docstring). Val is always sampled naturally.
+    pool (see module docstring). ``train_exclude_slugs`` removes
+    matching slugs from the train pool BEFORE sampling. Val records
+    are never excluded and val sampling is always natural — the
+    eval-side measurement must keep seeing the full class distribution
+    so per-class drift attributable to the drop list stays observable.
     """
     train_raw = _read_jsonl(train_jsonl)
     val_raw = _read_jsonl(val_jsonl)
@@ -113,6 +223,14 @@ def sample_na_plantae_records(
         rec["source"] = "na_plantae"
     for rec in val_raw:
         rec["source"] = "na_plantae"
+
+    train_raw = _apply_exclude_slugs(train_raw, train_exclude_slugs)
+    if n_train > 0 and not train_raw:
+        raise RuntimeError(
+            "na_plantae train pool is empty after applying "
+            "train_exclude_slugs; refusing to silently return 0 train "
+            "records."
+        )
 
     rng_t = random.Random(seed)
     rng_v = random.Random(seed + 1)
