@@ -1,8 +1,10 @@
 # Superpowers docs — generated, not committed
 docs/superpowers/
 
-finetune/logs/
-quantization/logs/
+src/finetune/results/
+src/finetune/logs/
+src/quantization/results/
+src/quantization/logs/
 
 # Xcode
 *.xcodeproj/
