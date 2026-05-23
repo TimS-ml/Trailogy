@@ -56,13 +56,13 @@ training:
   group_by_length: false
 
 data:
-  train_file: "data/mix-50k/train.jsonl"
+  train_file: "data/mix-50k-v2/train.jsonl"
   val_file: null
   val_files:
-    plant:      "data/mix-50k/val_plant.jsonl"
-    nonplant:   "data/mix-50k/val_nonplant.jsonl"
-    negative:   "data/mix-50k/val_negative.jsonl"
-    offline_qa: "data/mix-50k/val_offline_qa.jsonl"
+    plant:      "data/mix-50k-v2/val_plant.jsonl"
+    nonplant:   "data/mix-50k-v2/val_nonplant.jsonl"
+    negative:   "data/mix-50k-v2/val_negative.jsonl"
+    offline_qa: "data/mix-50k-v2/val_offline_qa.jsonl"
   max_train_samples: null
   max_val_samples: null
   augmentation: true
