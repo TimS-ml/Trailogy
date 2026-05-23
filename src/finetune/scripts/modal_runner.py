@@ -109,7 +109,11 @@ def _run_training(
     if env_overrides:
         env.update(env_overrides)
 
-    cmd = ["python", "-m", "src.finetune", "--config", config]
+    # Auto-disable wandb if no API key is available in the environment
+    if not env.get("WANDB_API_KEY"):
+        env.setdefault("WANDB_MODE", "disabled")
+
+    cmd = ["python", "-m", "src.finetune", "--config", config, "--report_to", "none"]
     if run_name:
         cmd += ["--run_name", run_name]
     if max_steps is not None:
