@@ -1,0 +1,16 @@
+# Sweep queue — r64 / r256 LoRA grid on mix-50k-v2, 30k steps.
+# Format: <yaml_path> [--flag value ...]
+# Lines starting with '#' and blank lines are ignored.
+# Per-entry overrides land AFTER sweep-level args, so they win.
+#
+# Ordering: KL variants first (kl=0.0001, the winner from prior 1k grid),
+# then nokl ablations. Inside each KL bracket: smaller rank first (faster
+# to validate the env + data path before the heavier r=256 run).
+
+# --- with tiny KL (kl_weight = 0.0001) ---
+configs/local_sweep/r64-a64-kl00001-local-30k-v2mix.yaml
+configs/local_sweep/r256-a256-kl00001-local-30k-v2mix.yaml
+
+# --- no KL (pure SFT ablation) ---
+configs/local_sweep/r64-a64-nokl-local-30k-v2mix.yaml
+configs/local_sweep/r256-a256-nokl-local-30k-v2mix.yaml
