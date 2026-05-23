@@ -2,10 +2,11 @@
 #
 # Same LoRA + dataset spec; max_steps lifted from 1 epoch (~3128) to
 # 30,000 (~9.6 epochs over the 50,037-row mix-50k corpus). Cosine LR
-# decay re-anneals over the longer horizon, save / eval cadence
-# stretched to 2,000 so we get ~15 checkpoints instead of one per
-# 1k-step block, and save_total_limit capped at 6 so the run keeps the
-# latest five rolling snapshots plus the final.
+# decay re-anneals over the longer horizon. save_steps=1000 yields up
+# to ~30 checkpoints over the run; save_total_limit=6 keeps the latest
+# 5 rolling snapshots plus the final on disk (older ones evicted).
+# Eval cadence kept at eval_steps=2000 so the bf16 multi-partition
+# eval doesn't dominate wall-clock at 1k cadence.
 
 model:
   base_model: "unsloth/gemma-4-E2B-it"
@@ -47,7 +48,7 @@ training:
   lr_scheduler_type: "cosine"
   seed: 3407
   report_to: "wandb"
-  save_steps: 2000
+  save_steps: 1000
   save_total_limit: 6
 
   dataloader_num_workers: 8

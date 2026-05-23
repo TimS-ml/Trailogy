@@ -1,20 +1,26 @@
-# 30k-step variant at r=16/alpha=16 (LoRA capacity 2x vs r8-a8-nokl-local-30k).
+# r=32/alpha=32 LoRA on mix-50k-v2, sized for a 16 GB 4090 laptop.
 #
-# Same dataset, optimizer schedule, and projector-tuning policy as
-# r8-a8-nokl-local-30k.yaml; only LoRA rank + alpha are doubled. At
-# r=8 + per_device_train_batch_size=2 the vanilla projector-only path
-# steady-states near ~13 GB on a 16 GB 4090 laptop; doubling LoRA rank
-# adds ~16M LoRA params + their Adam moments (~128 MB) plus a small
-# bump in attention activation size, so the run is expected to land
-# in the ~13.5-14 GB band — still comfortable on 16 GB.
+# Same dataset / optimizer schedule / projector-tuning policy as
+# r8-a8-nokl-local-30k-v2mix-local.yaml; only LoRA rank + alpha are
+# bumped 8 -> 32 (4x LoRA capacity, same alpha/r = 1.0 ratio).
+#
+# VRAM headroom expectation:
+#   r=8  vanilla projector-only  ~13.0 GB steady (measured)
+#   r=16 vanilla projector-only  ~13.7 GB steady (measured on
+#                                r16-a16-nokl-local-30k)
+#   r=32 vanilla projector-only  ~14.0-14.5 GB projected
+# LoRA params + Adam moments scale linearly with r; activations don't
+# (gradient checkpointing on), so the increment from r16 -> r32 is
+# dominated by ~32M extra params * 8 bytes (m + v in fp32) ~= 256 MB
+# plus negligible activation/gradient growth. Still leaves ~1.5-2 GB
+# headroom on a 16 GB GPU.
 #
 # NO-EVAL: train-time multi-partition eval OOMs on this GPU at
 # per_device_eval_batch_size=4 during accelerate's convert_to_fp32
-# pass over 256K-vocab logits (observed on r8-a8-nokl-vision2-local at
-# step 1000 between the plant and nonplant partitions). Run
-# `python -m src.evaluate --config <this yaml> --test_file
-# data/mix-50k/val_plant.jsonl` (or any other partition) separately
-# after training instead.
+# pass over 256K-vocab logits. Run
+#   python -m src.evaluate --config <this yaml> \
+#       --test_file data/mix-50k-v2/val_plant.jsonl
+# separately after training instead.
 
 model:
   base_model: "unsloth/gemma-4-E2B-it"
@@ -29,26 +35,26 @@ lora:
   finetune_language_layers: true
   finetune_attention_modules: true
   finetune_mlp_modules: true
-  r: 16
-  lora_alpha: 16                 # alpha/r = 1.0
+  r: 32
+  lora_alpha: 32                 # alpha/r = 1.0
   lora_dropout: 0.05
   bias: "none"
   random_state: 3407
   tune_projector: true
   projector_learning_rate: 1.4e-4
-  tune_last_n_vision_layers: 0   # vision tower frozen
+  tune_last_n_vision_layers: 0
   vision_layers_learning_rate: 1.0e-5
 
 training:
-  output_dir: "outputs/local-r16-a16-nokl-30k"
+  output_dir: "outputs/local-r32-a32-nokl-30k-v2mix-local"
 
   per_device_train_batch_size: 2
   gradient_accumulation_steps: 8   # eff_bs = 16
 
-  num_train_epochs: 10             # loose upper bound; max_steps wins
+  num_train_epochs: 10
   max_steps: 30000
   learning_rate: 3.0e-4
-  warmup_ratio: 0.03               # ~900 warmup steps at max_steps=30k
+  warmup_ratio: 0.03
   warmup_steps: 30
   logging_steps: 10
   optim: "adamw_torch_fused"
@@ -72,13 +78,13 @@ training:
   group_by_length: false
 
 data:
-  train_file: "data/mix-50k/train.jsonl"
+  train_file: "data/mix-50k-v2/train.jsonl"
   val_file: null
   val_files:
-    plant:      "data/mix-50k/val_plant.jsonl"
-    nonplant:   "data/mix-50k/val_nonplant.jsonl"
-    negative:   "data/mix-50k/val_negative.jsonl"
-    offline_qa: "data/mix-50k/val_offline_qa.jsonl"
+    plant:      "data/mix-50k-v2/val_plant.jsonl"
+    nonplant:   "data/mix-50k-v2/val_nonplant.jsonl"
+    negative:   "data/mix-50k-v2/val_negative.jsonl"
+    offline_qa: "data/mix-50k-v2/val_offline_qa.jsonl"
   max_train_samples: null
   max_val_samples: null
   augmentation: true
@@ -93,7 +99,6 @@ eval:
   batch_size: 1
   load_in_4bit: false
 
-# No KL: at small rank it suppresses species-name learning.
 regularization:
   kl_enabled: false
   kl_weight: 0.0
