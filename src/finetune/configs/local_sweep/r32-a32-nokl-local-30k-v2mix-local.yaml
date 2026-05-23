@@ -1,5 +1,26 @@
-# Training config: r=8, alpha=8, projector tuned, vision frozen, no KL.
-# Sized for a 16 GB-class GPU with effective batch size 16.
+# r=32/alpha=32 LoRA on mix-50k-v2, sized for a 16 GB 4090 laptop.
+#
+# Same dataset / optimizer schedule / projector-tuning policy as
+# r8-a8-nokl-local-30k-v2mix-local.yaml; only LoRA rank + alpha are
+# bumped 8 -> 32 (4x LoRA capacity, same alpha/r = 1.0 ratio).
+#
+# VRAM headroom expectation:
+#   r=8  vanilla projector-only  ~13.0 GB steady (measured)
+#   r=16 vanilla projector-only  ~13.7 GB steady (measured on
+#                                r16-a16-nokl-local-30k)
+#   r=32 vanilla projector-only  ~14.0-14.5 GB projected
+# LoRA params + Adam moments scale linearly with r; activations don't
+# (gradient checkpointing on), so the increment from r16 -> r32 is
+# dominated by ~32M extra params * 8 bytes (m + v in fp32) ~= 256 MB
+# plus negligible activation/gradient growth. Still leaves ~1.5-2 GB
+# headroom on a 16 GB GPU.
+#
+# NO-EVAL: train-time multi-partition eval OOMs on this GPU at
+# per_device_eval_batch_size=4 during accelerate's convert_to_fp32
+# pass over 256K-vocab logits. Run
+#   python -m src.evaluate --config <this yaml> \
+#       --test_file data/mix-50k-v2/val_plant.jsonl
+# separately after training instead.
 
 model:
   base_model: "unsloth/gemma-4-E2B-it"
@@ -14,24 +35,24 @@ lora:
   finetune_language_layers: true
   finetune_attention_modules: true
   finetune_mlp_modules: true
-  r: 8
-  lora_alpha: 8                  # alpha/r = 1.0
+  r: 32
+  lora_alpha: 32                 # alpha/r = 1.0
   lora_dropout: 0.05
   bias: "none"
   random_state: 3407
   tune_projector: true
   projector_learning_rate: 1.4e-4
-  tune_last_n_vision_layers: 0   # vision tower frozen
+  tune_last_n_vision_layers: 0
   vision_layers_learning_rate: 1.0e-5
 
 training:
-  output_dir: "outputs/local-r8-a8-nokl"
+  output_dir: "outputs/local-r32-a32-nokl-30k-v2mix-local"
 
   per_device_train_batch_size: 2
   gradient_accumulation_steps: 8   # eff_bs = 16
 
-  num_train_epochs: 1
-  max_steps: -1
+  num_train_epochs: 10
+  max_steps: 30000
   learning_rate: 3.0e-4
   warmup_ratio: 0.03
   warmup_steps: 30
@@ -42,15 +63,16 @@ training:
   seed: 3407
   report_to: "wandb"
   save_steps: 1000
-  save_total_limit: null
+  save_total_limit: 6
 
   dataloader_num_workers: 8
   dataloader_pin_memory: true
   tf32: true
 
-  eval_strategy: "steps"
-  eval_steps: 1000
-  per_device_eval_batch_size: 4
+  # Disable train-time eval; multi-partition eval OOMs on 16 GB GPU.
+  # Run eval separately via `python -m src.evaluate --config <this yaml>`.
+  eval_strategy: "no"
+  per_device_eval_batch_size: 1
 
   modality_aware_sampler: true
   group_by_length: false
@@ -77,7 +99,6 @@ eval:
   batch_size: 1
   load_in_4bit: false
 
-# No KL: at small rank it suppresses species-name learning.
 regularization:
   kl_enabled: false
   kl_weight: 0.0

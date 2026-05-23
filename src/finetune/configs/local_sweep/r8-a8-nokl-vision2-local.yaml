@@ -1,5 +1,5 @@
 # Training config: r=8, alpha=8, projector tuned, last 2 vision layers tuned, no KL.
-# Sized for a 24 GB-class GPU with effective batch size 16.
+# Sized for a 16 GB-class GPU with effective batch size 16.
 
 model:
   base_model: "unsloth/gemma-4-E2B-it"
@@ -56,19 +56,18 @@ training:
   group_by_length: false
 
 data:
-  train_file: "data/mix-50k/train.jsonl"
+  train_file: "data/mix-50k-v2/train.jsonl"
   val_file: null
   val_files:
-    plant:      "data/mix-50k/val_plant.jsonl"
-    nonplant:   "data/mix-50k/val_nonplant.jsonl"
-    negative:   "data/mix-50k/val_negative.jsonl"
-    offline_qa: "data/mix-50k/val_offline_qa.jsonl"
+    plant:      "data/mix-50k-v2/val_plant.jsonl"
+    nonplant:   "data/mix-50k-v2/val_nonplant.jsonl"
+    negative:   "data/mix-50k-v2/val_negative.jsonl"
+    offline_qa: "data/mix-50k-v2/val_offline_qa.jsonl"
   max_train_samples: null
   max_val_samples: null
   augmentation: true
   prompt_prefixes:
     camera_on:  "[camera=on] "
-    camera_off: "[camera=off] "
 
 eval:
   enabled: true

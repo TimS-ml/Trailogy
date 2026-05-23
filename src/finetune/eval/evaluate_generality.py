@@ -1,27 +1,48 @@
 #!/usr/bin/env python3
 """Multi-domain generality evaluation with Qwen-as-judge.
 
-Runs the finetuned model on all 6 eval domains and produces a combined
-report with per-domain metrics + a single generality score.
+Runs the finetuned model on the default 5 eval domains and produces a
+combined report with per-domain metrics + a single generality score.
 
 Domain metrics:
-  - plant:     species_match (exact), rouge_l
-  - llava:     qwen_score (1-5), plant_leakage (bool)
-  - mmlu:      accuracy (letter match)
-  - aime:      accuracy (numeric match)
-  - refusal:   refusal_detected (keyword match)
-  - text_chat: qwen_score (1-5), plant_leakage (bool)
+  - plant:     species_match (exact), rouge_l        [default]
+  - mmlu:      accuracy (letter match)                [default]
+  - aime:      accuracy (numeric match)               [default]
+  - refusal:   refusal_detected (keyword match)       [default]
+  - llava:     qwen_score (1-5) or rouge_l fallback,  [default]
+               plant_leakage (bool)
+  - text_chat: qwen_score (1-5) or rouge_l fallback,  [opt-in]
+               plant_leakage (bool)
+               (overlaps llava as an open-ended canary; pass
+                --domains explicitly to include)
 
 Qwen judge is called only for open-ended domains (llava, text_chat) —
-the rest use deterministic rule-based metrics.
+the rest use deterministic rule-based metrics. Pass --skip_judge to
+fall back to ROUGE-L on the open-ended domains (no API calls).
+
+Plant eval set selection:
+  - Default: ``plantae_plant_300.jsonl`` (NA-Plantae, 300 species; the
+    current training distribution).
+  - Legacy benchmark: pass ``--plant_eval_file eval/plantnet_plant_100.jsonl``
+    to score against the PlantNet-300K v1.0 frozen benchmark for
+    cross-run continuity.
+  - The script auto-detects the file's image-path style: absolute
+    paths (NA-Plantae) pass through; relative paths (PlantNet) require
+    ``--plant_image_root`` / ``$PLANT_IMAGE_ROOT``.
 
 Usage:
-    python src/finetune/eval_sets/evaluate_generality.py \
+    python src/finetune/eval/evaluate_generality.py \
         --base_model unsloth/gemma-4-E2B-it \
         --adapter_path outputs/my-lora \
-        --eval_dir src/finetune/eval_sets \
-        --output_file src/finetune/eval_sets/results/generality_report.json \
+        --eval_dir src/finetune/eval \
+        --output_file src/finetune/eval/results/generality_report.json \
         --qwen_model qwen-plus
+
+    # Legacy plantnet benchmark:
+    python src/finetune/eval/evaluate_generality.py \
+        --plant_eval_file src/finetune/eval/plantnet_plant_100.jsonl \
+        --plant_image_root /path/to/plantnet/val/ \
+        --adapter_path outputs/my-lora
 """
 from __future__ import annotations
 
@@ -77,6 +98,44 @@ def extract_species(text: str) -> str:
     # Fallback: first sentence
     first = text.split(".")[0].strip()
     return first.lower()[:60]
+
+
+_LEADING_ARTICLE_RE = re.compile(r"^(?:the|a|an)_")
+
+
+def species_slug(s: str) -> str:
+    """Canonical species slug for cross-format equality.
+
+    The dataset's ``class_id`` slugs (e.g. ``fairy_slipper``,
+    ``clasping_venus_s_looking_glass``) collapse hyphens, spaces and
+    apostrophes into a single ``_`` separator. The reference text and
+    the model's free-text response do not — the ref string may carry
+    ``Fairy-slipper`` while the model emits ``Fairy Slipper`` and the
+    raw lowercase comparison drops the hit on the floor (caught
+    ``fairy_slipper`` being scored wrong at r8@12k while the prediction
+    literally said the right species, just with a space instead of a
+    hyphen).
+
+    Normalisation rules, in order:
+      * lowercase + trim;
+      * apostrophes (straight ``'`` and curly ``\u2019``) -> space, so
+        ``venus's`` collapses to ``venus_s`` matching the dataset's
+        ``clasping_venus_s_looking_glass`` form;
+      * whitespace + hyphen -> ``_`` (``fairy-slipper`` ->
+        ``fairy_slipper``);
+      * drop any remaining non-alphanumeric;
+      * collapse repeated ``_`` and trim leading/trailing ones;
+      * strip a leading article (``the_`` / ``a_`` / ``an_``) the phrase
+        regex occasionally picks up ("Looks like the Fairy Slipper to
+        me").
+    """
+    s = s.strip().lower()
+    s = re.sub(r"['\u2019]", " ", s)
+    s = re.sub(r"[\s\-]+", "_", s)
+    s = re.sub(r"[^a-z0-9_]+", "", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    s = _LEADING_ARTICLE_RE.sub("", s)
+    return s
 
 
 # ---------------------------------------------------------------------------
@@ -186,13 +245,15 @@ def _resolve_plant_image_paths(
     plant_image_root: Path | None,
     eval_file: Path,
 ) -> list[dict]:
-    """Resolve plant_100.jsonl ``image`` fields to absolute paths on
-    this machine.
+    """Resolve plant-eval ``image`` fields to absolute paths on this machine.
 
     Accepts records whose ``image`` is either:
-      * relative (the portable form, e.g. ``138/5f8e....jpg``) — joined
-        against ``plant_image_root``; or
+      * relative (the portable form, e.g. PlantNet's ``138/5f8e....jpg``)
+        — joined against ``plant_image_root``; or
       * absolute and already exists on this machine — passed through.
+        The default NA-Plantae eval set (``plantae_plant_300.jsonl``)
+        ships absolute paths, so ``plant_image_root`` is not needed
+        for that case.
 
     Fails loud on the first record that resolves to a missing file.
     Silent skipping would quietly shrink the eval set and bias the
@@ -259,7 +320,7 @@ def _resolve_mix_image_paths(
     silently scoring placeholder text) is the failure mode this guard
     exists to prevent. Concretely:
 
-      * Empty record list → SystemExit (build_eval_set.py's fallback
+      * Empty record list → SystemExit (build_eval_set_plantnet.py's fallback
         used to emit ``[PLACEHOLDER]`` records when the val source was
         missing; if that path ever reactivates, fail here rather than
         score garbage).
@@ -271,7 +332,7 @@ def _resolve_mix_image_paths(
     if not records:
         raise SystemExit(
             f"{domain} domain: {eval_file} has 0 records. Refusing to "
-            f"emit zeros. Re-generate via build_eval_set.py against the "
+            f"emit zeros. Re-generate via build_eval_set_plantnet.py against the "
             f"real mix-50k val sources (val_nonplant.jsonl / "
             f"val_negative.jsonl) — the placeholder fallback path is a "
             f"footgun."
@@ -282,7 +343,7 @@ def _resolve_mix_image_paths(
         raise SystemExit(
             f"{domain} domain: {eval_file} uses relative image paths but "
             f"--mix_image_root / $MIX_IMAGE_ROOT was not set and the "
-            f"default ``<eval_dir>/images/`` didn't resolve. Pass "
+            f"default ``<repo>/assets/eval_images/`` didn't resolve. Pass "
             f"--mix_image_root pointing at the directory that contains "
             f"llava/ and negative/ image subdirs."
         )
@@ -311,7 +372,7 @@ def _resolve_mix_image_paths(
                 f"  Either point --mix_image_root at the directory holding "
                 f"llava/<hash>.jpg and negative/<hash>.jpg, or restore the "
                 f"committed eval-image bundle under "
-                f"hikeCompanion/finetune/eval_sets/images/."
+                f"assets/eval_images/."
             )
         rec = dict(rec)  # don't mutate caller's list element
         rec["image"] = str(p)
@@ -327,7 +388,23 @@ def _resolve_mix_image_paths(
 
 
 def score_plant(prediction: str, record: dict) -> dict:
-    """Score a plant identification response."""
+    """Score a plant identification response.
+
+    Equality is decided on the slug-canonical form (``species_slug``)
+    rather than the raw lowercased extraction. The lowercased path is
+    too strict — the dataset's reference text routinely carries the
+    hyphenated common name ("Fairy-slipper") while the model emits the
+    spaced form ("Fairy Slipper"). They denote the same species; the
+    slug collapses both to ``fairy_slipper`` and the hit is scored
+    correctly.
+
+    If the record carries a slug-form ``class_id`` (NA-Plantae style:
+    ``fairy_slipper``, ``clasping_venus_s_looking_glass``) we use that
+    directly as the gold key — it's the authoritative dataset label
+    and dodges any failure mode in the reference-text extractor.
+    Otherwise (legacy plantnet records have a numeric ``class_id``) we
+    fall back to slugging the extracted reference phrase.
+    """
     ref_text = ""
     for msg in record["conversations"]:
         if msg["role"] == "assistant":
@@ -336,13 +413,22 @@ def score_plant(prediction: str, record: dict) -> dict:
 
     ref_species = extract_species(ref_text)
     pred_species = extract_species(prediction)
-    match = ref_species == pred_species
+
+    raw_class_id = str(record.get("class_id", ""))
+    if raw_class_id and re.fullmatch(r"[a-z0-9_]+", raw_class_id) and not raw_class_id.isdigit():
+        gold_slug = raw_class_id
+    else:
+        gold_slug = species_slug(ref_species)
+    pred_slug = species_slug(pred_species)
+    match = gold_slug == pred_slug
 
     return {
         "species_match": match,
         "rouge_l": rouge_l(prediction, ref_text),
         "ref_species": ref_species,
         "pred_species": pred_species,
+        "gold_slug": gold_slug,
+        "pred_slug": pred_slug,
     }
 
 
@@ -459,7 +545,7 @@ Output ONLY valid JSON: {{"score": <1-5>, "plant_leakage": <true/false>, "reason
 
     def __init__(self, model: str = "qwen-plus", cache_path: Path | None = None):
         self.model = model
-        self.cache_path = cache_path or FINETUNE_DIR / "eval_sets" / "results" / ".judge_cache.json"
+        self.cache_path = cache_path or FINETUNE_DIR / "eval" / "results" / ".judge_cache.json"
         self.cache: dict[str, dict] = {}
         self._load_cache()
 
@@ -794,7 +880,21 @@ def _generate_mlx(handle, user_content: str, image_path: str | None, max_new_tok
 
 
 def _generate_hf(handle, user_content: str, image_path: str | None, max_new_tokens: int) -> str:
-    """Generate via HF transformers (CUDA/MPS)."""
+    """Generate via HF transformers (CUDA/MPS).
+
+    Two-step prompt assembly to dodge a transformers v5.8 trap:
+    ``apply_chat_template(..., tokenize=True, images=[image])`` raises
+    ``TypeError: ... got multiple values for keyword argument 'images'``
+    because Gemma4Processor.apply_chat_template now extracts images
+    from the messages content (``{"type": "image", ...}``) and *also*
+    forwards an explicit ``images=`` kwarg to the underlying processor
+    call. Passing the image via either channel alone works, but the
+    cleanest fix that mirrors src/evaluate.py is:
+
+      1. ``apply_chat_template(tokenize=False)`` → just the prompt text.
+      2. ``processor(text=..., images=image, return_tensors="pt")``
+         → tokenize + pack pixel_values in one shot, with no double-spec.
+    """
     import torch
     from PIL import Image as PILImage
 
@@ -803,19 +903,15 @@ def _generate_hf(handle, user_content: str, image_path: str | None, max_new_toke
     if image_path and Path(image_path).exists():
         image = PILImage.open(image_path).convert("RGB")
 
-    if image is not None:
-        inputs = handle.processor.apply_chat_template(
-            messages, add_generation_prompt=True,
-            tokenize=True, return_tensors="pt",
-            return_dict=True, images=[image],
-        )
-    else:
-        inputs = handle.processor.apply_chat_template(
-            messages, add_generation_prompt=True,
-            tokenize=True, return_tensors="pt",
-            return_dict=True,
-        )
+    prompt_text = handle.processor.apply_chat_template(
+        messages, add_generation_prompt=True, tokenize=False,
+    )
 
+    proc_kwargs = {"text": prompt_text, "return_tensors": "pt"}
+    if image is not None:
+        proc_kwargs["images"] = image
+
+    inputs = handle.processor(**proc_kwargs)
     inputs = {k: v.to(handle.model.device) if hasattr(v, "to") else v for k, v in inputs.items()}
 
     with torch.no_grad():
@@ -964,9 +1060,9 @@ def main():
     parser.add_argument("--loader", type=str, default=None,
                         choices=["mlx_vlm", "hf_bf16", "hf_gptq", "hf_gptq_hybrid"],
                         help="Model loader backend. Use mlx_vlm for quantized MLX models on Mac")
-    parser.add_argument("--eval_dir", type=Path, default=FINETUNE_DIR / "eval_sets")
+    parser.add_argument("--eval_dir", type=Path, default=FINETUNE_DIR / "eval")
     parser.add_argument("--output_file", type=Path,
-                        default=FINETUNE_DIR / "eval_sets" / "results" / "generality_report.json")
+                        default=FINETUNE_DIR / "eval" / "results" / "generality_report.json")
     parser.add_argument("--max_new_tokens", type=int, default=256)
     parser.add_argument("--qwen_model", type=str, default="qwen-plus",
                         help="Qwen model for judging (qwen-plus, qwen-max, etc.)")
@@ -988,26 +1084,42 @@ def main():
                              "catastrophic-forgetting story is corrupted by "
                              "measurement artifact rather than real drift.")
     parser.add_argument("--domains", type=str, nargs="+",
-                        default=["plant", "llava", "mmlu", "aime", "refusal", "text_chat"],
-                        help="Domains to evaluate (default: all)")
+                        default=["plant", "mmlu", "aime", "refusal", "llava"],
+                        help="Domains to evaluate. Default: "
+                             "plant + mmlu + aime + refusal + llava (5). "
+                             "text_chat is opt-in — it overlaps llava as an "
+                             "open-ended canary and was dropped from the "
+                             "default to keep the run lean. Add it back "
+                             "explicitly when you want the smoltalk drift "
+                             "signal: --domains plant mmlu aime refusal "
+                             "llava text_chat.")
+    parser.add_argument("--plant_eval_file", type=Path, default=None,
+                        help="Path to the plant-domain eval JSONL. "
+                             "Default: <eval_dir>/plantae_plant_300.jsonl "
+                             "(NA-Plantae, current training distribution). "
+                             "Pass <eval_dir>/plantnet_plant_100.jsonl to "
+                             "score against the legacy PlantNet-300K v1.0 "
+                             "frozen benchmark.")
     parser.add_argument("--plant_image_root", type=Path, default=None,
                         help="Root directory that holds plant images referenced "
-                             "by plant_100.jsonl's relative ``image`` paths "
-                             "(``<species_id>/<hash>.jpg``). Required for the "
-                             "plant domain unless the JSONL ships absolute "
-                             "paths that already exist on this machine. "
+                             "by --plant_eval_file's relative ``image`` paths "
+                             "(``<species_id>/<hash>.jpg``). Required only when "
+                             "the JSONL uses relative paths (PlantNet-style); "
+                             "the default NA-Plantae set ships absolute paths "
+                             "and does not need this flag. "
                              "Env var fallback: PLANT_IMAGE_ROOT.")
     parser.add_argument("--mix_image_root", type=Path, default=None,
                         help="Root directory holding the mix-bucket images "
                              "referenced by llava_40.jsonl and refusal_20.jsonl "
                              "(``llava/<hash>.jpg``, ``negative/<hash>.jpg``). "
-                             "Defaults to ``<eval_dir>/images/`` which is the "
-                             "self-contained image bundle shipped in the repo, "
-                             "so llava + refusal eval works on a fresh clone "
-                             "with no extra setup. Override only if you've "
-                             "moved the images (e.g. the docker bundle keeps "
-                             "them under ``data_mix/_local/images/``). Env var "
-                             "fallback: MIX_IMAGE_ROOT.")
+                             "Defaults to ``<repo>/assets/eval_images/`` "
+                             "which is the self-contained image bundle "
+                             "shipped in the repo, so llava + refusal eval "
+                             "works on a fresh clone with no extra setup. "
+                             "Override only if you've moved the images (e.g. "
+                             "the docker bundle keeps them under "
+                             "``data_mix/_local/images/``). Env var fallback: "
+                             "MIX_IMAGE_ROOT.")
     parser.add_argument("--judge_only", action="store_true",
                         help="Skip model inference, just run judge on existing predictions")
     parser.add_argument("--seed", type=int, default=3407,
@@ -1035,14 +1147,16 @@ def main():
     # Mix-bucket image-root resolution. llava_40.jsonl and
     # refusal_20.jsonl reference images via ``<bucket>/<hash>.jpg``
     # relative paths. Resolution order: CLI flag → env var →
-    # ``<eval_dir>/images/`` self-contained bundle. The last one is the
-    # zero-config path for anyone who cloned the repo and ran
-    # prepare_plantnet_50k.sh — the ~5 MB image bundle is shipped in
-    # finetune/eval_sets/images/ so no separate data step is needed.
+    # ``<repo>/assets/eval_images/`` self-contained bundle. The last one
+    # is the zero-config path for anyone who cloned the repo — the
+    # ~5 MB image bundle (llava/ + negative/) ships in-repo so no
+    # separate data step is needed for the llava / refusal domains.
     if args.mix_image_root is None and os.environ.get("MIX_IMAGE_ROOT"):
         args.mix_image_root = Path(os.environ["MIX_IMAGE_ROOT"])
     if args.mix_image_root is None:
-        default_mix_root = args.eval_dir / "images"
+        # FINETUNE_DIR = <repo>/src/finetune  →  parents[1] = <repo>
+        repo_root = FINETUNE_DIR.parents[1]
+        default_mix_root = repo_root / "assets" / "eval_images"
         if default_mix_root.is_dir():
             args.mix_image_root = default_mix_root
             log.info(
@@ -1051,9 +1165,12 @@ def main():
                 default_mix_root,
             )
 
-    # Discover eval files
+    # Discover eval files. Plant domain defaults to the NA-Plantae set
+    # (current training distribution); pass --plant_eval_file to swap
+    # in plantnet_plant_100.jsonl for the legacy benchmark.
+    plant_eval_file = args.plant_eval_file or (args.eval_dir / "plantae_plant_300.jsonl")
     eval_files = {
-        "plant": args.eval_dir / "plant_100.jsonl",
+        "plant": plant_eval_file,
         "llava": args.eval_dir / "llava_40.jsonl",
         "mmlu": args.eval_dir / "mmlu_50.jsonl",
         "aime": args.eval_dir / "aime_20.jsonl",
@@ -1090,7 +1207,7 @@ def main():
         if not eval_file.exists():
             raise SystemExit(
                 f"{domain} domain: eval file not found: {eval_file}\n"
-                f"  Regenerate via build_eval_set.py, or pick a different "
+                f"  Regenerate via build_eval_set_plantnet.py, or pick a different "
                 f"--eval_dir."
             )
 

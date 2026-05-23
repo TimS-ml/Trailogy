@@ -54,19 +54,26 @@ def test_save_reload_default_config_exists() -> None:
 
 
 def test_eval_set_defaults_follow_src_layout() -> None:
-    build_eval_set = _script_text("eval_sets/build_eval_set.py")
-    evaluate_generality = _script_text("eval_sets/evaluate_generality.py")
+    # v4: eval_sets/ -> eval/, build_eval_set.py -> build_eval_set_plantnet.py.
+    # The `_plantnet` suffix on the BUILDER marks it as the v1.0 legacy
+    # benchmark builder (an NA-Plantae builder will live at the unsuffixed
+    # name later). The evaluator was renamed back to the unsuffixed
+    # `evaluate_generality.py` because its plant domain now defaults to
+    # the NA-Plantae set; the PlantNet benchmark is opt-in via
+    # `--plant_eval_file eval/plantnet_plant_100.jsonl`.
+    build_eval_set = _script_text("eval/build_eval_set_plantnet.py")
+    evaluate_generality = _script_text("eval/evaluate_generality.py")
 
     assert "FINETUNE_DIR = Path(__file__).resolve().parents[1]" in build_eval_set
     assert "FINETUNE_DIR / \"data\" / \"english-desc\" / \"val.jsonl\"" in build_eval_set
-    assert "FINETUNE_DIR / \"eval_sets\"" in build_eval_set
+    assert "FINETUNE_DIR / \"eval\"" in build_eval_set
     assert 'Path("finetune/data' not in build_eval_set
-    assert 'Path("finetune/eval_sets' not in build_eval_set
+    assert 'Path("finetune/eval' not in build_eval_set
 
     assert "FINETUNE_DIR = Path(__file__).resolve().parents[1]" in evaluate_generality
-    assert "FINETUNE_DIR / \"eval_sets\" / \"results\" / \".judge_cache.json\"" in evaluate_generality
-    assert "FINETUNE_DIR / \"eval_sets\" / \"results\" / \"generality_report.json\"" in evaluate_generality
-    assert 'Path("finetune/eval_sets' not in evaluate_generality
+    assert "FINETUNE_DIR / \"eval\" / \"results\" / \".judge_cache.json\"" in evaluate_generality
+    assert "FINETUNE_DIR / \"eval\" / \"results\" / \"generality_report.json\"" in evaluate_generality
+    assert 'Path("finetune/eval' not in evaluate_generality
 
 
 def test_no_finetune_sweep_runners_ship() -> None:

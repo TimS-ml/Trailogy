@@ -1,5 +1,20 @@
-# Training config: r=8, alpha=8, projector tuned, vision frozen, no KL.
-# Sized for a 16 GB-class GPU with effective batch size 16.
+# 30k-step variant at r=16/alpha=16 (LoRA capacity 2x vs r8-a8-nokl-local-30k).
+#
+# Same dataset, optimizer schedule, and projector-tuning policy as
+# r8-a8-nokl-local-30k.yaml; only LoRA rank + alpha are doubled. At
+# r=8 + per_device_train_batch_size=2 the vanilla projector-only path
+# steady-states near ~13 GB on a 16 GB 4090 laptop; doubling LoRA rank
+# adds ~16M LoRA params + their Adam moments (~128 MB) plus a small
+# bump in attention activation size, so the run is expected to land
+# in the ~13.5-14 GB band — still comfortable on 16 GB.
+#
+# NO-EVAL: train-time multi-partition eval OOMs on this GPU at
+# per_device_eval_batch_size=4 during accelerate's convert_to_fp32
+# pass over 256K-vocab logits (observed on r8-a8-nokl-vision2-local at
+# step 1000 between the plant and nonplant partitions). Run
+# `python -m src.evaluate --config <this yaml> --test_file
+# data/mix-50k-v2/val_plant.jsonl` (or any other partition) separately
+# after training instead.
 
 model:
   base_model: "unsloth/gemma-4-E2B-it"
@@ -14,8 +29,8 @@ lora:
   finetune_language_layers: true
   finetune_attention_modules: true
   finetune_mlp_modules: true
-  r: 8
-  lora_alpha: 8                  # alpha/r = 1.0
+  r: 16
+  lora_alpha: 16                 # alpha/r = 1.0
   lora_dropout: 0.05
   bias: "none"
   random_state: 3407
@@ -25,15 +40,15 @@ lora:
   vision_layers_learning_rate: 1.0e-5
 
 training:
-  output_dir: "outputs/local-r8-a8-nokl"
+  output_dir: "outputs/local-r16-a16-nokl-30k"
 
   per_device_train_batch_size: 2
   gradient_accumulation_steps: 8   # eff_bs = 16
 
-  num_train_epochs: 1
-  max_steps: -1
+  num_train_epochs: 10             # loose upper bound; max_steps wins
+  max_steps: 30000
   learning_rate: 3.0e-4
-  warmup_ratio: 0.03
+  warmup_ratio: 0.03               # ~900 warmup steps at max_steps=30k
   warmup_steps: 30
   logging_steps: 10
   optim: "adamw_torch_fused"
@@ -42,15 +57,16 @@ training:
   seed: 3407
   report_to: "wandb"
   save_steps: 1000
-  save_total_limit: null
+  save_total_limit: 6
 
   dataloader_num_workers: 8
   dataloader_pin_memory: true
   tf32: true
 
-  eval_strategy: "steps"
-  eval_steps: 1000
-  per_device_eval_batch_size: 4
+  # Disable train-time eval; multi-partition eval OOMs on 16 GB GPU.
+  # Run eval separately via `python -m src.evaluate --config <this yaml>`.
+  eval_strategy: "no"
+  per_device_eval_batch_size: 1
 
   modality_aware_sampler: true
   group_by_length: false

@@ -1,4 +1,4 @@
-"""Tests for ``eval_sets/evaluate_generality.py``'s v4 camera-state
+"""Tests for ``eval/evaluate_generality.py``'s v4 camera-state
 prompt-prefix dispatch.
 
 Context: models trained with the v4 ``data.prompt_prefixes`` contract
@@ -31,7 +31,7 @@ _FT_ROOT = Path(__file__).resolve().parents[1]
 if str(_FT_ROOT) not in sys.path:
     sys.path.insert(0, str(_FT_ROOT))
 
-from eval_sets import evaluate_generality as eg  # noqa: E402
+from eval import evaluate_generality as eg  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

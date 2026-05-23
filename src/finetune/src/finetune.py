@@ -1155,7 +1155,8 @@ def real_train(cfg: FinetuneConfig, resume_from_checkpoint: Optional[str] = None
     #    LoRA-injection level (no adapters in vision tower). When
     #    tune_projector=True, we additionally pass modules_to_save so PEFT
     #    keeps the projector as full trainable params (not LoRA-adapted).
-    log.info("Attaching LoRA adapters (r=%d, alpha=%d)", cfg.lora.r, cfg.lora.lora_alpha)
+    adapter_label = "DoRA" if cfg.lora.use_dora else "LoRA"
+    log.info("Attaching %s adapters (r=%d, alpha=%d)", adapter_label, cfg.lora.r, cfg.lora.lora_alpha)
     peft_kwargs: Dict[str, Any] = dict(
         finetune_vision_layers=cfg.lora.finetune_vision_layers,    # False
         finetune_language_layers=cfg.lora.finetune_language_layers,
@@ -1166,6 +1167,7 @@ def real_train(cfg: FinetuneConfig, resume_from_checkpoint: Optional[str] = None
         lora_dropout=cfg.lora.lora_dropout,
         bias=cfg.lora.bias,
         random_state=cfg.lora.random_state,
+        use_dora=cfg.lora.use_dora,
     )
     if cfg.lora.tune_projector:
         # Stack projector + (optional) vision-layer modules under

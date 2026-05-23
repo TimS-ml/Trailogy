@@ -1,6 +1,3 @@
-# Training config: r=8, alpha=16, projector tuned, vision frozen, KL enabled.
-# Uses KL temperature 2.0 for a softer reference distribution.
-
 model:
   base_model: "unsloth/gemma-4-E2B-it"
   max_seq_length: 1024
@@ -14,8 +11,8 @@ lora:
   finetune_language_layers: true
   finetune_attention_modules: true
   finetune_mlp_modules: true
-  r: 8
-  lora_alpha: 16
+  r: 256
+  lora_alpha: 256
   lora_dropout: 0.05
   bias: "none"
   random_state: 3407
@@ -25,14 +22,16 @@ lora:
   vision_layers_learning_rate: 1.0e-5
 
 training:
-  output_dir: "outputs/cloud-r8-a16-kl005-t2"
+  output_dir: "outputs/local-r256-a256-nokl-30k-v2mix"
+
   per_device_train_batch_size: 2
   gradient_accumulation_steps: 8
-  num_train_epochs: 5
-  max_steps: 1000
-  learning_rate: 2.0e-4
+
+  num_train_epochs: 10
+  max_steps: 30000
+  learning_rate: 1.0e-4
   warmup_ratio: 0.03
-  warmup_steps: 30
+  warmup_steps: 300
   logging_steps: 10
   optim: "adamw_torch_fused"
   weight_decay: 0.001
@@ -40,10 +39,11 @@ training:
   seed: 3407
   report_to: "wandb"
   save_steps: 1000
+  save_total_limit: null
+
   dataloader_num_workers: 8
   dataloader_pin_memory: true
   tf32: true
-  save_total_limit: null
 
   eval_strategy: "steps"
   eval_steps: 1000
@@ -74,10 +74,9 @@ eval:
   batch_size: 1
   load_in_4bit: false
 
-# SWEEP — kl_temperature 1.0 -> 2.0. kl_weight unchanged.
 regularization:
-  kl_enabled: true
-  kl_weight: 0.05
-  kl_temperature: 2.0
+  kl_enabled: false
+  kl_weight: 0.0
+  kl_temperature: 1.0
   l2_enabled: false
   l2_weight: 1.0e-4

@@ -1,5 +1,21 @@
-# Training config: r=8, alpha=16, projector tuned, vision frozen, KL enabled.
-# Uses KL temperature 2.0 for a softer reference distribution.
+# Local 16 GB GPU variant of r8-a8-nokl-local-30k-v2mix.yaml.
+#
+# Identical model / lora / training spec to r8-a8-nokl-local-30k-v2mix
+# (which itself mirrors r8-a8-nokl-local-30k except for the data path).
+# Only differences from r8-a8-nokl-local-30k-v2mix:
+#   * eval_strategy: "steps" -> "no" (train-time multi-partition eval
+#     OOMs on a 16 GB 4090 laptop during accelerate's convert_to_fp32
+#     pass over 256K-vocab logits — observed on r8-a8-nokl-vision2-local
+#     at step 1000 between the plant and nonplant partitions).
+#   * per_device_eval_batch_size: 4 -> 1 (consistent with the no-eval
+#     baseline; never used in this run, just keeps the field sane if
+#     someone toggles eval_strategy back to "steps" later).
+#   * output_dir: appended "-v2mix-local" suffix so checkpoints from
+#     this run don't collide with the cloud v2mix run.
+#
+# Run eval separately via:
+#   python -m src.evaluate --config <this yaml> \
+#       --test_file data/mix-50k-v2/val_plant.jsonl
 
 model:
   base_model: "unsloth/gemma-4-E2B-it"
@@ -15,22 +31,24 @@ lora:
   finetune_attention_modules: true
   finetune_mlp_modules: true
   r: 8
-  lora_alpha: 16
+  lora_alpha: 8
   lora_dropout: 0.05
   bias: "none"
   random_state: 3407
   tune_projector: true
-  projector_learning_rate: 1.0e-4
+  projector_learning_rate: 1.4e-4
   tune_last_n_vision_layers: 0
   vision_layers_learning_rate: 1.0e-5
 
 training:
-  output_dir: "outputs/cloud-r8-a16-kl005-t2"
+  output_dir: "outputs/local-r8-a8-nokl-30k-v2mix-local"
+
   per_device_train_batch_size: 2
   gradient_accumulation_steps: 8
-  num_train_epochs: 5
-  max_steps: 1000
-  learning_rate: 2.0e-4
+
+  num_train_epochs: 10
+  max_steps: 30000
+  learning_rate: 3.0e-4
   warmup_ratio: 0.03
   warmup_steps: 30
   logging_steps: 10
@@ -40,14 +58,16 @@ training:
   seed: 3407
   report_to: "wandb"
   save_steps: 1000
+  save_total_limit: 6
+
   dataloader_num_workers: 8
   dataloader_pin_memory: true
   tf32: true
-  save_total_limit: null
 
-  eval_strategy: "steps"
-  eval_steps: 1000
-  per_device_eval_batch_size: 4
+  # Disable train-time eval; multi-partition eval OOMs on 16 GB GPU.
+  # Run eval separately via `python -m src.evaluate --config <this yaml>`.
+  eval_strategy: "no"
+  per_device_eval_batch_size: 1
 
   modality_aware_sampler: true
   group_by_length: false
@@ -74,10 +94,9 @@ eval:
   batch_size: 1
   load_in_4bit: false
 
-# SWEEP — kl_temperature 1.0 -> 2.0. kl_weight unchanged.
 regularization:
-  kl_enabled: true
-  kl_weight: 0.05
-  kl_temperature: 2.0
+  kl_enabled: false
+  kl_weight: 0.0
+  kl_temperature: 1.0
   l2_enabled: false
   l2_weight: 1.0e-4

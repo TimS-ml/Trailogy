@@ -280,6 +280,23 @@ def test_validator_allows_load_in_4bit_with_tune_last_n_vision_layers_and_warns(
     assert "model.load_in_4bit=True" in caplog.text
 
 
+def test_validator_rejects_dora_with_qlora() -> None:
+    """DoRA + QLoRA is an invalid combination."""
+    cfg = FinetuneConfig()
+    cfg.lora.use_dora = True
+    cfg.model.load_in_4bit = True
+    errors = validate_config(cfg)
+    assert any("use_dora" in e and "load_in_4bit" in e for e in errors)
+
+
+def test_validator_accepts_dora_bf16() -> None:
+    """DoRA in bf16 mode (no QLoRA) is valid."""
+    cfg = FinetuneConfig()
+    cfg.lora.use_dora = True
+    assert cfg.model.load_in_4bit is False
+    assert validate_config(cfg) == []
+
+
 def test_validator_accepts_default_full_precision() -> None:
     """Default config (load_in_4bit=False, no projector) passes."""
     cfg = FinetuneConfig()

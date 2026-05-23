@@ -1,4 +1,14 @@
-# Training config: r=256, alpha=256, projector tuned, vision frozen, KL enabled.
+# Training config: r=8, alpha=8, projector tuned, last 2 vision layers tuned, no KL.
+# Sized for a 16 GB-class GPU with effective batch size 16.
+#
+# NO-EVAL variant of r8-a8-nokl-vision2-local.yaml: train-time eval is
+# disabled (eval_strategy="no") because the multi-partition eval OOMs on
+# a 16 GB 4090 laptop at this projector + vision-tower config. The first
+# partition (plant, 1125 samples, eval loss ~0.318 @ step 1000) finishes
+# fine, but the handoff to the next partition triggers an OOM in
+# accelerate's convert_to_fp32 over the 256K-vocab logits at
+# per_device_eval_batch_size=4. Run `python -m src.evaluate --config
+# <this yaml>` separately after training instead.
 
 model:
   base_model: "unsloth/gemma-4-E2B-it"
@@ -13,23 +23,25 @@ lora:
   finetune_language_layers: true
   finetune_attention_modules: true
   finetune_mlp_modules: true
-  r: 256
-  lora_alpha: 256
+  r: 8
+  lora_alpha: 8                   # alpha/r = 1.0
   lora_dropout: 0.05
   bias: "none"
   random_state: 3407
   tune_projector: true
-  projector_learning_rate: 1.0e-4
-  tune_last_n_vision_layers: 0
-  vision_layers_learning_rate: 1.0e-5
+  projector_learning_rate: 1.4e-4
+  tune_last_n_vision_layers: 2
+  vision_layers_learning_rate: 1.0e-5  # SigLIP fragile; keep small
 
 training:
-  output_dir: "outputs/cloud-r256-a256-kl005"
-  per_device_train_batch_size: 2
-  gradient_accumulation_steps: 8
-  num_train_epochs: 1
+  output_dir: "outputs/local-r8-a8-nokl-vision2-no-eval"
+
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4    # eff_bs = 16
+
+  num_train_epochs: 3
   max_steps: -1
-  learning_rate: 2.0e-4
+  learning_rate: 3.0e-4
   warmup_ratio: 0.03
   warmup_steps: 30
   logging_steps: 10
@@ -40,17 +52,15 @@ training:
   report_to: "wandb"
   save_steps: 1000
   save_total_limit: null
+
   dataloader_num_workers: 8
   dataloader_pin_memory: true
   tf32: true
 
-  # Mid-training val-loss eval every 1000 steps (HF Trainer's
-  # per-domain CE loss, written to wandb under eval/{plant,nonplant,
-  # negative,offline_qa}_loss). Cheap (~3 min) and orthogonal to
-  # the post-train generality eval — keep both.
-  eval_strategy: "steps"
-  eval_steps: 1000
-  per_device_eval_batch_size: 4
+  # Disable train-time eval; multi-partition eval OOMs on 16 GB GPU.
+  # Run eval separately via `python -m src.evaluate --config <this yaml>`.
+  eval_strategy: "no"
+  per_device_eval_batch_size: 1
 
   modality_aware_sampler: true
   group_by_length: false
@@ -66,10 +76,6 @@ data:
   max_train_samples: null
   max_val_samples: null
   augmentation: true
-  # Camera-state gate. Image-bearing records get a "[camera=on] "
-  # prefix; text-only records get no prefix (camera_off omitted -> the
-  # data loader's .get default emits empty string). Matches the iOS
-  # GemmaService dispatch (only the .vlm path prepends the marker).
   prompt_prefixes:
     camera_on:  "[camera=on] "
 
@@ -81,13 +87,10 @@ eval:
   batch_size: 1
   load_in_4bit: false
 
-# KL penalty against base model — production strength (0.05). The
-# bet here: r=256 has enough capacity that even with KL anchoring,
-# plant ID improves substantially vs r=8 baseline, while MMLU stays
-# above the 0.30 drop threshold.
+# No KL: at small rank it suppresses species-name learning.
 regularization:
-  kl_enabled: true
-  kl_weight: 0.05
+  kl_enabled: false
+  kl_weight: 0.0
   kl_temperature: 1.0
   l2_enabled: false
   l2_weight: 1.0e-4

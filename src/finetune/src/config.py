@@ -92,6 +92,14 @@ class LoraConfig:
     # LR because pretrained SigLIP weights are more fragile than the
     # freshly-needed projector adaptation.
     vision_layers_learning_rate: Optional[float] = None
+    # DoRA (Weight-Decomposed Low-Rank Adaptation). When True, PEFT applies
+    # DoRA instead of standard LoRA: each adapted weight is decomposed into
+    # a magnitude vector and a direction matrix, with LoRA applied only to
+    # the direction component. This generally improves training stability
+    # and final accuracy at the cost of ~10-15% slower step time (extra
+    # magnitude normalization per forward pass). Default False for
+    # backward compatibility with existing sweep configs.
+    use_dora: bool = False
 
 
 @dataclass
@@ -369,6 +377,7 @@ CLI_OVERRIDE_MAP: Dict[str, tuple[str, ...]] = {
     "projector_learning_rate": ("lora", "projector_learning_rate"),
     "tune_last_n_vision_layers": ("lora", "tune_last_n_vision_layers"),
     "vision_layers_learning_rate": ("lora", "vision_layers_learning_rate"),
+    "use_dora": ("lora", "use_dora"),
     # EvalConfig (auto-eval after training).
     "eval_enabled": ("eval", "enabled"),
     # CLI uses `max_eval_samples_eval` to avoid collision with
@@ -526,6 +535,18 @@ def validate_config(cfg: FinetuneConfig) -> List[str]:
             "fail loudly if any modules_to_save copy ends up as "
             "bnb.Params4bit (e.g. base_model doesn't skip-quantize the "
             "projector)."
+        )
+    # DoRA + QLoRA: PEFT's DoRA layer requires computing a weight norm
+    # on the full-precision weight, but under 4-bit quantization the
+    # original weight is not available — this causes NaN or crashes.
+    # Hard-reject the combination.
+    if cfg.lora.use_dora and cfg.model.load_in_4bit:
+        errors.append(
+            "lora.use_dora=True is incompatible with model.load_in_4bit=True "
+            "(QLoRA). DoRA requires the full-precision base weight for "
+            "magnitude normalization, which is unavailable under 4-bit "
+            "quantization. Use standard LoRA for QLoRA runs, or disable "
+            "load_in_4bit to use DoRA."
         )
     if (
         cfg.lora.projector_learning_rate is not None

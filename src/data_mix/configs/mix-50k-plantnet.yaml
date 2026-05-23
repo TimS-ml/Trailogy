@@ -1,0 +1,53 @@
+# data_mix/configs/mix-50k-plantnet.yaml
+#
+# PlantNet-backed 50K-row anti-overtraining mix. The "default"
+# mix-50k.yaml name is reserved for the NA-Plantae-backed mix going
+# forward; this file preserves the v1.0 PlantNet recipe as a
+# benchmark reference.
+#
+# Bucket ratios (same as mix-20k and mix-100k): Plant 45 / LLaVA 30 /
+# smoltalk 15 / Negative 10.
+#
+# Plant balancing: per_class_cap=50 caps each species at 50 rows. With
+# 782 species (after the v3 per-species val carve-out: 45,089 in train,
+# 4,911 in val), this cap produces ~22,438 total train rows and ~4,911
+# val rows. Head classes (the few with >50 images) get compressed down
+# to 50 to give the long tail proportionally more weight than in the
+# un-capped distribution.
+#
+# plant.train=22000 leaves ~438 buffer under the post-cap 22,438 pool
+# so the build is robust against small drift in the prep step.
+#
+# Source: LLaVA-instruct-mix-vsft. See mix-100k-plantnet.yaml for the
+# source + filter rationale.
+seed: 42
+source: llava
+
+plant:
+  train: 22000
+  val:   1100
+  per_class_cap: 50
+
+llava:
+  train: 15000
+  val:   750
+
+smoltalk:
+  train: 7500
+  val:   375
+
+negative:
+  train: 5000
+  val:   250
+
+# v3: tiny persona bucket. Sits OUTSIDE the 45/30/15/10 ratio (so the
+# mix becomes 49,538 instead of the bucket-sum 49,500 — 0.08 % drift,
+# i.e. 38 extra rows from this bucket). Note: the bucket targets
+# above sum to 49,500, not 50,000 — the "50k" is a round-number label,
+# not a hard target. Whole offline_qa corpus included once; no
+# oversample. The path is resolved relative to the repo root at
+# mix-build time. At val_ratio=0.1 we get 4 val records out of the
+# 42-entry corpus.
+offline_qa:
+  path: "assets/data_offline_qa/offline_qa.json"
+  val_ratio: 0.1

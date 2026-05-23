@@ -1,29 +1,59 @@
 # data_mix/configs/mix-50k.yaml
 #
-# v2 production config: 50K-row anti-overtraining mix.
+# Default 50K-row mix for Trailogy v2.0. Species-ID bucket is **NA-Plantae**
+# (locally fetched from iNaturalist around the supported trail set —
+# see src/data_mix/scripts/na_plantae_fetch.py). PlantNet is intentionally
+# absent: the v1.0 PlantNet-50k corpus has almost no North-American
+# trees and so under-represents the species users actually see on the
+# Trailogy trails. The PlantNet-backed recipe is preserved at
+# mix-50k-plantnet.yaml for benchmark comparison.
 #
-# Bucket ratios (same as mix-20k and mix-100k): Plant 45 / LLaVA 30 /
-# smoltalk 15 / Negative 10.
+# Bucket ratios (approximate; na_plantae is oversampled from a ~440-row
+# source pool so each "row" is really a re-shuffle of the underlying
+# images across epochs):
 #
-# Plant balancing: per_class_cap=50 caps each species at 50 rows. With
-# 782 species (after the v3 per-species val carve-out: 45,089 in train,
-# 4,911 in val), this cap produces ~22,438 total train rows and ~4,911
-# val rows. Head classes (the few with >50 images) get compressed down
-# to 50 to give the long tail proportionally more weight than in the
-# un-capped distribution.
+#   na_plantae      45%   22,500 train   1,125 val
+#   llava         30%   15,000 train     750 val
+#   smoltalk      15%    7,500 train     375 val
+#   negative      10%    5,000 train     250 val
+#   offline_qa    out-of-ratio (~38 train / 4 val, whole corpus)
 #
-# plant.train=22000 leaves ~438 buffer under the post-cap 22,438 pool
-# so the build is robust against small drift in the prep step.
+# Total: ~50,038 train rows. The "50k" label is a round-number tag;
+# the bucket targets sum to 50,000.
 #
-# Source: LLaVA-instruct-mix-vsft. See mix-100k.yaml for the source +
-# filter rationale.
+# na_plantae source: produced by
+#   1. src/data_mix/scripts/na_plantae_fetch.py  -> writes per-split
+#      images + raw metadata to $TRAILOGY_DATA_ROOT/inaturalist_na_plantae/
+#      (default $TRAILOGY_DATA_ROOT = <repo>/../data/, OUTSIDE the repo).
+#   2. python -m data_mix.src.prepare_na_plantae \\
+#          --source_root  $TRAILOGY_DATA_ROOT/inaturalist_na_plantae \\
+#          --output_dir   $TRAILOGY_DATA_ROOT/inaturalist_na_plantae_prepared
+#      -> joins each image with assets/na_plantae/descriptions.yaml and
+#      emits training-schema JSONLs ({image, conversations}).
+#
+# mix-build storage convention: all generated artefacts live OUTSIDE the
+# repo. Paths below are written as ``../data/...`` (relative to the repo
+# root, interpreted via HIKECOMPANION_ROOT in mix.py). Override via
+# absolute paths or via the env vars consumed by env_paths.py.
+#
+# PlantNet bucket is OMITTED (no ``plant:`` block). mix.py treats this
+# as plant_train=plant_val=0 and skips the PlantNet sampler entirely.
+
 seed: 42
 source: llava
 
-plant:
-  train: 22000
-  val:   1100
-  per_class_cap: 50
+na_plantae:
+  train: 22500
+  val:   1125
+  train_jsonl: "../data/inaturalist_na_plantae_prepared/train.jsonl"
+  val_jsonl:   "../data/inaturalist_na_plantae_prepared/val.jsonl"
+  # Per-class re-weighting on the train pool. 1.0 = natural (legacy);
+  # 0.5 = square-root tempered (Mahajan et al. 2018) — gives long-tail
+  # classes proportionally more visibility without full balancing.
+  # The prepare step's --min-imgs-per-species=30 / --max-imgs-per-species=120
+  # caps already compress the natural 192x imbalance ratio to ~4x; the
+  # remaining gap is closed with this tempering.
+  train_temperature: 0.5
 
 llava:
   train: 15000
@@ -37,14 +67,8 @@ negative:
   train: 5000
   val:   250
 
-# v3: tiny persona bucket. Sits OUTSIDE the 45/30/15/10 ratio (so the
-# mix becomes 49,538 instead of the bucket-sum 49,500 — 0.08 % drift,
-# i.e. 38 extra rows from this bucket). Note: the file is named mix-50k
-# but the bucket targets above sum to 49,500, not 50,000 — the "50k"
-# is a round-number label, not a hard target. Whole offline_qa corpus
-# included once; no oversample. The path is resolved relative to the
-# repo root at mix-build time. At val_ratio=0.1 we get 4 val records
-# out of the 42-entry corpus.
+# v3: tiny persona bucket, same path/val_ratio convention as the
+# PlantNet-backed mixes. Whole corpus included once; no oversample.
 offline_qa:
   path: "assets/data_offline_qa/offline_qa.json"
   val_ratio: 0.1

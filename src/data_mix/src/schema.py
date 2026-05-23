@@ -8,7 +8,7 @@ Schema (v2):
             {"role": "assistant", "content": "..."},
             ...  # strict user/assistant alternation, starting with user
         ],
-        "source": "plant" | "cambrian" | "llava" | "smoltalk" | "negative"
+        "source": "plant" | "na_plantae" | "cambrian" | "llava" | "smoltalk" | "negative" | "offline_qa"
     }
 
 v2 changes vs v1:
@@ -22,7 +22,10 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-ALLOWED_SOURCES = frozenset({"plant", "cambrian", "llava", "smoltalk", "negative", "offline_qa"})
+ALLOWED_SOURCES = frozenset({
+    "plant", "na_plantae", "cambrian", "llava",
+    "smoltalk", "negative", "offline_qa",
+})
 
 
 class RecordError(ValueError):

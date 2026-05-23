@@ -1,0 +1,222 @@
+# North American tree descriptions for the NA-Plantae eyeball eval +
+# data_mix supplement. Schema mirrors the relevant subset of
+# `PlantNet-300K-data-v2/species_metadata_enriched.csv` plus a
+# pre-formatted ``answer`` field that drops straight into the existing
+# ANSWER_TEMPLATES contract in `src/finetune/src/prepare_plantnet.py`.
+#
+# Layout per record:
+#   slug             — directory name under <NA_TREES_ROOT>/<slug>/
+#   common_name      — display name used in the answer
+#   species          — Latin binomial (genus + specific epithet)
+#   full_species     — Latin binomial + author (mirrors GBIF "full_species")
+#   genus, family    — taxonomic placement (Wikipedia / GBIF)
+#   answer           — single canonical assistant turn for this species,
+#                      shape: "<intro> {common}. {Latin}, commonly called
+#                      {common}, is a {category} in the family {Family}."
+#   short_desc       — 1–2 line natural description usable as RAG context
+#   native_range     — North American distribution summary
+#   wikipedia_url    — primary reference
+#
+# Style notes — to keep the supplement in distribution with the existing
+# SFT data:
+#   - The ``answer`` keeps the same two-sentence shape as
+#     `prepare_plantnet.py:ANSWER_TEMPLATES` (compose at data-prep time
+#     by randomly picking the lead-in phrase if desired).
+#   - common_name capitalisation: Title Case (matches existing labels).
+#   - Family suffix is "-aceae" per APG IV.
+
+trees:
+  - slug: red_maple
+    common_name: Red Maple
+    species: Acer rubrum
+    full_species: Acer rubrum L.
+    genus: Acer
+    family: Sapindaceae
+    answer: >-
+      Looks like Red Maple to me. Acer rubrum, commonly called red maple, is
+      a fast-growing deciduous tree in the family Sapindaceae, known for its
+      brilliant scarlet autumn foliage and small red flowers in early spring.
+    short_desc: >-
+      Medium-to-large deciduous tree (18–27 m); 3-lobed serrated leaves with
+      whitish undersides; vivid red fall colour; red flowers, fruits, and
+      twigs (hence the name).
+    native_range: Eastern and central North America, from Newfoundland south to Florida and west to Texas.
+    wikipedia_url: https://en.wikipedia.org/wiki/Acer_rubrum
+
+  - slug: white_oak
+    common_name: White Oak
+    species: Quercus alba
+    full_species: Quercus alba L.
+    genus: Quercus
+    family: Fagaceae
+    answer: >-
+      You're looking at White Oak. Quercus alba, commonly called white oak,
+      is a long-lived deciduous tree in the family Fagaceae, prized for its
+      durable timber and broad rounded crown.
+    short_desc: >-
+      Large deciduous oak (24–30 m); leaves with 5–9 rounded lobes (no
+      bristle tips); light grey scaly bark; acorns mature in a single
+      season. Can live 300+ years.
+    native_range: Eastern and central North America; absent from the far south Florida and arid west.
+    wikipedia_url: https://en.wikipedia.org/wiki/Quercus_alba
+
+  - slug: live_oak
+    common_name: Live Oak
+    species: Quercus virginiana
+    full_species: Quercus virginiana Mill.
+    genus: Quercus
+    family: Fagaceae
+    answer: >-
+      That's a Live Oak. Quercus virginiana, commonly called southern live
+      oak, is an evergreen oak in the family Fagaceae famous for its massive
+      spreading limbs draped in Spanish moss.
+    short_desc: >-
+      Evergreen oak (15–20 m) with a broad, sprawling crown often wider
+      than tall; small leathery elliptic leaves stay green year-round;
+      iconic in the US Deep South.
+    native_range: Southeastern coastal plain — Virginia to Florida, west along the Gulf Coast to Texas and northern Mexico.
+    wikipedia_url: https://en.wikipedia.org/wiki/Quercus_virginiana
+
+  - slug: eastern_white_pine
+    common_name: Eastern White Pine
+    species: Pinus strobus
+    full_species: Pinus strobus L.
+    genus: Pinus
+    family: Pinaceae
+    answer: >-
+      Looks like Eastern White Pine. Pinus strobus, commonly called eastern
+      white pine, is a tall evergreen conifer in the family Pinaceae,
+      recognisable by its soft blue-green needles in bundles of five.
+    short_desc: >-
+      Large coniferous tree (30–50 m, historically taller); flexible
+      bluish-green needles in fascicles of five; long slender cones; one
+      of the most important North American timber trees.
+    native_range: Eastern North America — Newfoundland south to northern Georgia and west through the Great Lakes.
+    wikipedia_url: https://en.wikipedia.org/wiki/Pinus_strobus
+
+  - slug: douglas_fir
+    common_name: Douglas Fir
+    species: Pseudotsuga menziesii
+    full_species: Pseudotsuga menziesii (Mirb.) Franco
+    genus: Pseudotsuga
+    family: Pinaceae
+    answer: >-
+      That looks like Douglas Fir. Pseudotsuga menziesii, commonly called
+      Douglas fir, is a tall evergreen conifer in the family Pinaceae,
+      identifiable by its distinctive three-pronged cone bracts.
+    short_desc: >-
+      Very large evergreen conifer (typically 20–70 m, occasionally over
+      100 m); single flat needles all around the twig; pendant cones
+      with papery three-pointed bracts protruding between scales — the
+      diagnostic "mouse-tail" feature.
+    native_range: Western North America — coastal British Columbia south to central California and inland through the Rockies.
+    wikipedia_url: https://en.wikipedia.org/wiki/Pseudotsuga_menziesii
+
+  - slug: sweetgum
+    common_name: Sweetgum
+    species: Liquidambar styraciflua
+    full_species: Liquidambar styraciflua L.
+    genus: Liquidambar
+    family: Altingiaceae
+    answer: >-
+      That's a Sweetgum. Liquidambar styraciflua, commonly called American
+      sweetgum, is a deciduous tree in the family Altingiaceae known for
+      its star-shaped leaves and spiky spherical fruit balls.
+    short_desc: >-
+      Medium-to-large deciduous tree (20–35 m); leaves alternate,
+      palmately 5–7 lobed (star-shaped); spiky woody fruit clusters
+      ("gumballs"); brilliant red-purple autumn colour.
+    native_range: Southeastern United States; also Mexico and Central America.
+    wikipedia_url: https://en.wikipedia.org/wiki/Liquidambar_styraciflua
+
+  - slug: flowering_dogwood
+    common_name: Flowering Dogwood
+    species: Cornus florida
+    full_species: Cornus florida L.
+    genus: Cornus
+    family: Cornaceae
+    answer: >-
+      Good eye — this is Flowering Dogwood. Cornus florida, commonly called
+      flowering dogwood, is a small deciduous tree in the family Cornaceae
+      famous for its showy white or pink four-petalled bracts in spring.
+    short_desc: >-
+      Small understory tree (5–10 m); opposite oval leaves with arcuate
+      veins; "flowers" are clusters of tiny true florets surrounded by
+      four large showy bracts (white, occasionally pink); red drupe fruits
+      in fall.
+    native_range: Eastern North America — Maine south to Florida and west to eastern Texas; also northeastern Mexico.
+    wikipedia_url: https://en.wikipedia.org/wiki/Cornus_florida
+
+  - slug: american_holly
+    common_name: American Holly
+    species: Ilex opaca
+    full_species: Ilex opaca Aiton
+    genus: Ilex
+    family: Aquifoliaceae
+    answer: >-
+      You're looking at American Holly. Ilex opaca, commonly called American
+      holly, is an evergreen tree in the family Aquifoliaceae, instantly
+      recognisable by its spiny dark-green leaves and bright red berries.
+    short_desc: >-
+      Evergreen tree (10–20 m) with stiff, spine-tipped dark-green
+      leaves; dioecious — female trees carry the iconic bright red drupe
+      berries through winter. The classic North American Christmas holly.
+    native_range: Eastern United States — Massachusetts south to Florida and west to Texas and Missouri.
+    wikipedia_url: https://en.wikipedia.org/wiki/Ilex_opaca
+
+  - slug: honey_locust
+    common_name: Honey Locust
+    species: Gleditsia triacanthos
+    full_species: Gleditsia triacanthos L.
+    genus: Gleditsia
+    family: Fabaceae
+    answer: >-
+      That's a Honey Locust. Gleditsia triacanthos, commonly called honey
+      locust, is a deciduous legume tree in the family Fabaceae, notable
+      for its fern-like compound leaves and long twisted seed pods.
+    short_desc: >-
+      Medium-large deciduous tree (20–30 m); bipinnately compound leaves
+      give a delicate fern-like canopy; wild trees carry fierce branched
+      thorns on trunk and branches (cultivars are thornless); flat
+      twisted brown seed pods up to 40 cm long.
+    native_range: Central United States — Pennsylvania to Nebraska south to Texas; widely planted elsewhere.
+    wikipedia_url: https://en.wikipedia.org/wiki/Gleditsia_triacanthos
+
+  - slug: bradford_pear
+    common_name: Bradford Pear
+    species: Pyrus calleryana
+    full_species: Pyrus calleryana 'Bradford'
+    genus: Pyrus
+    family: Rosaceae
+    answer: >-
+      Looks like Bradford Pear. Pyrus calleryana 'Bradford' is a popular
+      ornamental cultivar in the family Rosaceae, valued for its profuse
+      early-spring white blossoms and uniform pyramidal shape — though
+      it is now widely regarded as invasive in the eastern US.
+    short_desc: >-
+      Small-to-medium deciduous tree (8–15 m); dense pyramidal-to-rounded
+      crown; clouds of white five-petalled flowers in early spring
+      (notoriously pungent); glossy ovate leaves turning red-purple in
+      fall; small hard inedible pomes. Considered invasive across much
+      of the eastern US.
+    native_range: Cultivar derived from Callery pear (native to China and Vietnam); naturalised and invasive throughout the southeastern United States.
+    wikipedia_url: https://en.wikipedia.org/wiki/Pyrus_calleryana
+
+  - slug: crepe_myrtle
+    common_name: Crepe Myrtle
+    species: Lagerstroemia indica
+    full_species: Lagerstroemia indica L.
+    genus: Lagerstroemia
+    family: Lythraceae
+    answer: >-
+      That's a Crepe Myrtle. Lagerstroemia indica, commonly called crape
+      myrtle, is a small deciduous tree in the family Lythraceae prized
+      for its long summer bloom of crinkled crepe-paper-textured flowers
+      and smooth mottled cinnamon bark.
+    short_desc: >-
+      Small deciduous tree or large shrub (3–8 m); panicles of crinkly
+      ruffled flowers in pink, white, red, or purple from midsummer
+      through early fall; smooth peeling bark in shades of grey, tan,
+      and cinnamon; a staple of the US Southeast landscape.
+    native_range: Native to the Indian subcontinent and Southeast Asia; widely planted across the southeastern United States.
+    wikipedia_url: https://en.wikipedia.org/wiki/Lagerstroemia_indica

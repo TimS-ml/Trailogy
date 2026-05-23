@@ -388,7 +388,7 @@ def generate_response(
         # string across runs. Without do_sample=False the model's
         # generation_config.json defaults take over (Gemma 4 ships
         # do_sample=True), which means species_match drifts ~5 pts
-        # run-to-run on plant_100. We had this bug invisibly under
+        # run-to-run on plantnet_plant_100. We had this bug invisibly under
         # the adapter-loading bug; once that's fixed the sampling
         # noise becomes the next determinism leak.
         output_ids = model.generate(

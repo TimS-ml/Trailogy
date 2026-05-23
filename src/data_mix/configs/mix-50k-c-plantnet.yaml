@@ -1,7 +1,7 @@
-# data_mix/configs/mix-50k-c.yaml
+# data_mix/configs/mix-50k-c-plantnet.yaml
 #
-# Variant of mix-50k-b.yaml: plant bumped to 45 %, smoltalk halved,
-# remaining deficit spread evenly across llava/smoltalk/negative.
+# PlantNet-backed mix-50k variant (-c): plant bumped to 45 %, smoltalk
+# halved, remaining deficit spread evenly across llava/smoltalk/negative.
 # Image-only camera prefix (no camera_off tag on text data).
 #
 #   bucket    mix-50k    mix-50k-b    mix-50k-c    delta (b->c)
@@ -18,8 +18,8 @@
 #   configs/local_sweep/r8-a16-drop005-mix50kc.yaml
 # which sets prompt_prefixes.camera_on only (no camera_off key).
 #
-# val_* files are SHARED with mix-50k for cross-run eval_loss
-# comparability (same val, different train).
+# val_* files are SHARED with mix-50k-plantnet for cross-run
+# eval_loss comparability (same val, different train).
 
 seed: 42
 source: llava
@@ -41,7 +41,7 @@ negative:
   train: 4350
   val:   250
 
-# v3: tiny persona bucket, same path/val_ratio as mix-50k.
+# v3: tiny persona bucket, same path/val_ratio as mix-50k-plantnet.
 offline_qa:
   path: "assets/data_offline_qa/offline_qa.json"
   val_ratio: 0.1

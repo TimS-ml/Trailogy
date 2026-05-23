@@ -1,6 +1,7 @@
-# data_mix/configs/mix-100k.yaml
+# data_mix/configs/mix-100k-plantnet.yaml
 #
-# v2 production config: 100K-row anti-overtraining mix.
+# PlantNet-backed 100K-row anti-overtraining mix (preserved for
+# benchmark comparison against the 50k canonical).
 #
 # Bucket ratios (same as mix-20k): Plant 45 / LLaVA 30 / smoltalk 15 /
 # Negative 10.
@@ -8,8 +9,8 @@
 # Plant balancing: per_class_cap=146 = max class size in PlantNet
 # enriched train (45K rows / 782 species). At this cap, the plant
 # bucket consumes all PlantNet train rows — 100K-mix cannot be made
-# "more balanced" without dropping plant rows (the 50K mix uses cap=50
-# for a real balancing effect).
+# "more balanced" without dropping plant rows (mix-50k-plantnet uses
+# cap=50 for a real balancing effect).
 #
 # Source: LLaVA-instruct-mix-vsft (HuggingFaceH4/llava-instruct-mix-vsft,
 # 273K rows). Non-plant filter is OFF — incidental plant images survive

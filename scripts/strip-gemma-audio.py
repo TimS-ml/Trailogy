@@ -32,8 +32,33 @@ Usage
     # or
     python3 scripts/strip-gemma-audio.py path/to/Models/Gemma
 
-Idempotent: if the .audio.bak backup already exists, the script no-ops
-and tells you the file's already been stripped.
+Idempotence is determined by INSPECTING THE IN-PLACE FILE'S HEADER,
+not by checking whether a sibling backup happens to exist. Earlier
+versions of this script short-circuited on ``backup_path.exists()``,
+which silently skipped the strip when a backup from a *different*
+model was present in ``scripts/backups/`` — the in-place file kept
+its audio tower and downstream HF uploads carried the dead bytes.
+If you parse the in-place safetensors header and find no
+``audio_tower.*``/``embed_audio.*`` keys, the file is genuinely
+already stripped and the script returns; otherwise it strips,
+regardless of what backups already sit on disk.
+
+Backup naming
+-------------
+The default invocation (no path arg) strips the bundled iOS model
+at ``HikeCompanion/Resources/Models/Gemma`` and writes
+``scripts/backups/model.safetensors.audio.bak`` (legacy filename,
+preserved for fetch-gemma.sh + restore commands documented below).
+
+Any other ``model_dir`` (e.g. a one-off quantization output under
+``src/quantization/results/...``) writes
+``scripts/backups/model.safetensors.audio.bak.<slug>`` where
+``<slug>`` is a 10-char SHA-1 prefix of the absolute model_dir path.
+This means stripping a second model NEVER clobbers the bundled
+iOS-model backup and never collides with another non-default
+strip's backup. To restore a non-default model, look up its slug
+in the script's stdout (printed near the end) or recompute it from
+the model dir path.
 
 Restore
 -------
@@ -49,6 +74,7 @@ because that path is bundled wholesale into the .app via xcodegen's
 keep the .bak in scripts/backups/ instead (gitignored), so it sits next
 to the script that produced it but never reaches the device.
 """
+import hashlib
 import json
 import os
 import struct
@@ -93,12 +119,27 @@ def read_header(fin) -> tuple[int, dict]:
     return 8 + header_len, header
 
 
+def _backup_path_for(model_dir: Path, backup_dir: Path) -> Path:
+    """Return the backup safetensors path for this model_dir.
+
+    Default-bundle path keeps the legacy unsuffixed filename so
+    ``fetch-gemma.sh`` and the restore commands documented in the
+    module docstring keep working byte-for-byte. Any other model_dir
+    gets a SHA-1-prefix suffix so multiple non-default strips don't
+    collide with each other or with the bundled-model backup.
+    """
+    if model_dir == DEFAULT_MODEL_DIR:
+        return backup_dir / "model.safetensors.audio.bak"
+    slug = hashlib.sha1(str(model_dir).encode("utf-8")).hexdigest()[:10]
+    return backup_dir / f"model.safetensors.audio.bak.{slug}"
+
+
 def main(model_dir: Path, backup_dir: Path = DEFAULT_BACKUP_DIR) -> None:
     safetensors_path = model_dir / "model.safetensors"
     index_path = model_dir / "model.safetensors.index.json"
 
     backup_dir.mkdir(parents=True, exist_ok=True)
-    backup_path = backup_dir / "model.safetensors.audio.bak"
+    backup_path = _backup_path_for(model_dir, backup_dir)
 
     # Migration: detect a stale backup left in the OLD location (next to
     # the safetensors). Move it out of the bundle path before doing
@@ -122,19 +163,20 @@ def main(model_dir: Path, backup_dir: Path = DEFAULT_BACKUP_DIR) -> None:
             f"       Run scripts/fetch-gemma.sh first."
         )
 
-    if backup_path.exists():
-        print(
-            f"NOTE: {backup_path.relative_to(REPO_ROOT)} already exists — original\n"
-            f"      is preserved and the in-place file appears already stripped.\n"
-            f"      Current size: {fmt_bytes(safetensors_path.stat().st_size)}\n"
-            f"      To restore: mv {backup_path} {safetensors_path}"
-        )
-        return
-
     orig_size = safetensors_path.stat().st_size
     print(f"==> Reading {safetensors_path.name} ({fmt_bytes(orig_size)})")
 
     # ---- Pass 1: read header, plan new layout ----
+    #
+    # The header is the authoritative idempotence signal. The previous
+    # ``if backup_path.exists(): return`` check was buggy on any
+    # invocation where a backup from a *different* model already sat
+    # in scripts/backups/ — that path short-circuited a strip that the
+    # in-place file genuinely needed, and the downstream HF upload
+    # then shipped the un-stripped (3.34 GB instead of 2.77 GB) file
+    # with audio_tower still present. The fix is to inspect the
+    # in-place safetensors header and decide on the basis of whether
+    # audio_tower / embed_audio keys actually exist in this file.
     with safetensors_path.open("rb") as fin:
         data_start, header = read_header(fin)
 
@@ -142,7 +184,15 @@ def main(model_dir: Path, backup_dir: Path = DEFAULT_BACKUP_DIR) -> None:
     audio_keys = [k for k in header if any(k.startswith(p) for p in AUDIO_PREFIXES)]
 
     if not audio_keys:
-        print("==> Nothing to strip — no audio_tower/embed_audio keys found.")
+        # Genuinely already stripped — nothing to do. The presence
+        # (or absence) of a sibling .audio.bak is informational only;
+        # it doesn't gate the no-op.
+        print("==> Nothing to strip — no audio_tower/embed_audio keys in header.")
+        if backup_path.exists():
+            print(
+                f"    (backup at {backup_path} is preserved; restore with "
+                f"`mv {backup_path} {safetensors_path}`)"
+            )
         return
 
     print(f"==> Found {len(audio_keys)} audio key(s) to drop")
@@ -182,13 +232,28 @@ def main(model_dir: Path, backup_dir: Path = DEFAULT_BACKUP_DIR) -> None:
     print(f"==> Estimated new file size: {fmt_bytes(estimated_new_size)} "
           f"(saves {fmt_bytes(orig_size - estimated_new_size)})")
 
-    # ---- Pass 2: write new file, then rotate ----
-    print(f"==> Backing up original to {backup_path.name}")
-    os.rename(safetensors_path, backup_path)
+    # ---- Pass 2: write new file to a temp path, then rotate atomically ----
+    #
+    # Write to a sibling temp first instead of doing
+    # ``rename(in_place → backup) + open(in_place, 'wb')``. Two reasons:
+    #
+    #   1. If a backup for this model already sits at ``backup_path``
+    #      (e.g. a prior strip whose write completed, then someone
+    #      restored the in-place file from another source), the old
+    #      ``os.rename`` would have silently clobbered that backup
+    #      before we even tried to write. Now the existing backup is
+    #      preserved across reruns.
+    #   2. The strip becomes crash-safer: a process kill mid-write
+    #      leaves the original in-place file intact (only the temp is
+    #      partially written), instead of leaving us with the backup
+    #      moved out and no in-place file at all.
+    tmp_path = safetensors_path.with_suffix(".safetensors.tmp.audio_strip")
+    if tmp_path.exists():
+        tmp_path.unlink()
 
-    print(f"==> Writing stripped {safetensors_path.name}")
+    print(f"==> Writing stripped {safetensors_path.name} (to temp)")
     try:
-        with backup_path.open("rb") as fin, safetensors_path.open("wb") as fout:
+        with safetensors_path.open("rb") as fin, tmp_path.open("wb") as fout:
             # Header
             fout.write(struct.pack("<Q", len(new_header_bytes)))
             fout.write(new_header_bytes)
@@ -213,12 +278,24 @@ def main(model_dir: Path, backup_dir: Path = DEFAULT_BACKUP_DIR) -> None:
                           f"{fmt_bytes(written)} written",
                           flush=True)
     except Exception:
-        # Roll back: restore original from backup
-        print("ERROR during write — rolling back from backup", file=sys.stderr)
-        if safetensors_path.exists():
-            safetensors_path.unlink()
-        os.rename(backup_path, safetensors_path)
+        # Clean up the partial temp; the in-place file is still intact.
+        print("ERROR during write — discarding partial temp", file=sys.stderr)
+        if tmp_path.exists():
+            tmp_path.unlink()
         raise
+
+    # All bytes safely on disk. Now rotate: original → backup (only if
+    # no per-model backup already exists), then temp → in-place.
+    if backup_path.exists():
+        print(
+            f"==> Backup already exists at {backup_path.name}; "
+            f"discarding the now-redundant pre-strip copy of the in-place file."
+        )
+        safetensors_path.unlink()
+    else:
+        print(f"==> Backing up original to {backup_path.name}")
+        os.rename(safetensors_path, backup_path)
+    os.rename(tmp_path, safetensors_path)
 
     new_size = safetensors_path.stat().st_size
     saved = orig_size - new_size

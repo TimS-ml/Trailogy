@@ -35,6 +35,7 @@ from data_mix.src.llava_sampler import (
     open_llava_stream,
     sample_llava_records,
 )
+from data_mix.src.na_plantae_sampler import sample_na_plantae_records
 from data_mix.src.negative_builder import build_negative_records
 from data_mix.src.offline_qa_sampler import sample_offline_qa_records
 from data_mix.src.plant_sampler import (
@@ -63,6 +64,10 @@ NONPLANT_SOURCES = frozenset({"cambrian", "llava", "smoltalk"})
 @dataclass(frozen=True)
 class MixConfig:
     source: str                      # "cambrian" (v1) | "llava" (v2)
+    # v4: plant (PlantNet) bucket is optional — NA-Plantae-backed mixes
+    # omit it entirely (na_plantae becomes the species-ID source). When
+    # omitted from the yaml, all three plant_* fields default to 0 and
+    # the sampler is skipped.
     plant_train: int
     plant_val: int
     plant_per_class_cap: int
@@ -82,6 +87,32 @@ class MixConfig:
     # bit-identical to their previous output.
     offline_qa_path: str | None = None
     offline_qa_val_ratio: float = 0.1
+    # v4: na_plantae bucket — optional, sits alongside the main plant
+    # bucket. Records get ``source: "na_plantae"`` stamped and route into
+    # the ``plant`` val partition (both are image-bearing species ID).
+    # Skipped entirely when na_plantae_train_jsonl is None.
+    na_plantae_train: int = 0
+    na_plantae_val: int = 0
+    na_plantae_train_jsonl: str | None = None
+    na_plantae_val_jsonl: str | None = None
+    # Per-class re-weighting on the na_plantae train pool. 1.0 = legacy
+    # frequency-proportional sampling. 0.5 = square-root tempered
+    # (long-tail standard). 0.0 = fully class-balanced. Val is always
+    # natural regardless of this setting.
+    na_plantae_train_temperature: float = 1.0
+    # Slugs removed from the na_plantae train pool BEFORE sampling. Used
+    # to drop visually-similar / fine-grained-confusable classes
+    # surfaced by per-class drift analysis. Val side is never filtered
+    # (the eval must keep seeing the full class distribution).
+    na_plantae_train_exclude_slugs: tuple[str, ...] = ()
+    # Hardlink (or copy on cross-filesystem) val_*.jsonl from another
+    # mix output dir into this run's ``output_root``. When set, the
+    # builder skips val sampling entirely so eval files stay
+    # byte-identical to the source mix's eval files. Resolved against
+    # the external data root (same logic as ``output_root``).
+    # Typical use: a v2 mix re-uses v1's frozen val so eval_<key>_loss
+    # is comparable across the mix boundary.
+    freeze_val_from: str | None = None
 
 
 def _load_config(path: Path) -> MixConfig:
@@ -109,11 +140,14 @@ def _load_config(path: Path) -> MixConfig:
         if not offline_qa_path.is_absolute():
             offline_qa_path = HIKECOMPANION_ROOT / offline_qa_path
         offline_qa_path = str(offline_qa_path.resolve())
+    na_plantae_section = raw.get("na_plantae") or {}
+    # v4: ``plant`` is optional. Absent -> 0/0/0 (skip sampler entirely).
+    plant_section = raw.get("plant") or {}
     return MixConfig(
         source=source,
-        plant_train=raw["plant"]["train"],
-        plant_val=raw["plant"]["val"],
-        plant_per_class_cap=raw["plant"]["per_class_cap"],
+        plant_train=int(plant_section.get("train", 0)),
+        plant_val=int(plant_section.get("val", 0)),
+        plant_per_class_cap=int(plant_section.get("per_class_cap", 0)),
         general_train=general_section["train"],
         general_val=general_section["val"],
         smoltalk_train=raw["smoltalk"]["train"],
@@ -123,6 +157,17 @@ def _load_config(path: Path) -> MixConfig:
         seed=raw["seed"],
         offline_qa_path=offline_qa_path,
         offline_qa_val_ratio=float(offline_qa_section.get("val_ratio", 0.1)),
+        na_plantae_train=int(na_plantae_section.get("train", 0)),
+        na_plantae_val=int(na_plantae_section.get("val", 0)),
+        na_plantae_train_jsonl=na_plantae_section.get("train_jsonl"),
+        na_plantae_val_jsonl=na_plantae_section.get("val_jsonl"),
+        na_plantae_train_temperature=float(
+            na_plantae_section.get("train_temperature", 1.0)
+        ),
+        na_plantae_train_exclude_slugs=tuple(
+            na_plantae_section.get("train_exclude_slugs") or ()
+        ),
+        freeze_val_from=raw.get("freeze_val_from"),
     )
 
 
@@ -175,7 +220,10 @@ def _partition_val_by_source(val_records: List[dict]) -> Dict[str, List[dict]]:
     }
     for rec in val_records:
         src = rec["source"]
-        if src == "plant":
+        if src in ("plant", "na_plantae"):
+            # v4: na_plantae rides alongside plant in the val partition —
+            # both are image-bearing species ID and share the same
+            # "degradation watch" eval semantics.
             out["plant"].append(rec)
         elif src == "negative":
             out["negative"].append(rec)
@@ -188,50 +236,172 @@ def _partition_val_by_source(val_records: List[dict]) -> Dict[str, List[dict]]:
     return out
 
 
+FROZEN_VAL_FILENAMES = (
+    "val.jsonl",
+    "val_plant.jsonl",
+    "val_nonplant.jsonl",
+    "val_negative.jsonl",
+    "val_offline_qa.jsonl",
+)
+
+
+def _resolve_freeze_source(freeze_val_from: str) -> Path:
+    """Resolve ``freeze_val_from`` against the external data root.
+
+    Accepts:
+      * absolute path -> used verbatim,
+      * relative path -> resolved against ``TRAILOGY_DATA_ROOT``
+        (same logic as ``output_root`` derivation in env_paths.py).
+    """
+    from data_mix.src.env_paths import external_data_root  # local import to avoid cycle
+
+    p = Path(freeze_val_from).expanduser()
+    if not p.is_absolute():
+        p = external_data_root() / p
+    return p.resolve()
+
+
+def _link_or_copy(src: Path, dst: Path) -> str:
+    """Hardlink ``src`` to ``dst``. Fall back to copy across filesystems
+    or when hardlinks are unsupported. Returns the action taken
+    (``"hardlink"`` or ``"copy"``) so the build report records reality.
+    """
+    import shutil
+
+    if dst.exists():
+        dst.unlink()
+    try:
+        dst.hardlink_to(src)
+        return "hardlink"
+    except (OSError, NotImplementedError) as e:
+        log.warning(
+            "hardlink failed for %s -> %s (%s); falling back to copy",
+            dst, src, e,
+        )
+        shutil.copy2(src, dst)
+        return "copy"
+
+
+def _freeze_val_files(
+    source_dir: Path, output_root: Path,
+) -> dict[str, dict[str, str]]:
+    """Hardlink (or copy) the frozen val_*.jsonl set from ``source_dir``
+    into ``output_root``. Returns a dict mapping filename ->
+    {"src": str, "method": "hardlink"|"copy"} for the build report.
+
+    Fails loud if a required val file is missing from the source —
+    silent fallback would leave the trainer pointing at a path that
+    doesn't exist and any eval bucket would disappear from the loss
+    curves with no warning.
+    """
+    if not source_dir.is_dir():
+        raise FileNotFoundError(
+            f"freeze_val_from source dir does not exist: {source_dir}"
+        )
+
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    actions: dict[str, dict[str, str]] = {}
+    missing: list[str] = []
+    for name in FROZEN_VAL_FILENAMES:
+        src = source_dir / name
+        dst = output_root / name
+        if not src.exists():
+            missing.append(name)
+            continue
+        method = _link_or_copy(src, dst)
+        actions[name] = {"src": str(src), "method": method}
+        log.info("freeze_val_from: %s %s -> %s", method, src, dst)
+
+    if missing:
+        log.warning(
+            "freeze_val_from: %d val file(s) missing from %s, not "
+            "linked: %s. The trainer's val_files map must not "
+            "reference any of these.",
+            len(missing), source_dir, missing,
+        )
+    return actions
+
+
 def build_mix(config_path: Path) -> Path:
     cfg = _load_config(config_path)
-    paths = resolve_paths()
+    paths = resolve_paths(config_path=config_path)
     rng = random.Random(cfg.seed)
 
     log.info("paths: %s", paths)
     log.info("source: %s", cfg.source)
 
-    # --- Plant ---
-    # v2: dual-source sampler if PLANTNET_VAL_JSONL resolves to an existing
-    # file (the per-species val output of prepare_plantnet_50k.sh). Falls
-    # back to the v1 single-source + random slice if no val.jsonl exists
-    # next to plantnet_jsonl — keeps mix-20k (the v1 cambrian config) and
-    # older smoke tests working without a re-prep.
-    if paths.plantnet_val_jsonl.exists():
-        plant_train, plant_val = sample_plant_records_split(
-            train_jsonl=paths.plantnet_jsonl,
-            val_jsonl=paths.plantnet_val_jsonl,
-            n_train=cfg.plant_train,
-            n_val=cfg.plant_val,
-            per_class_cap=cfg.plant_per_class_cap,
-            seed=cfg.seed,
-        )
+    # When freezing val files from another mix, force every bucket's
+    # val count to 0 so no val records are sampled. The samplers all
+    # short-circuit on val=0; the val partitioner receives an empty
+    # list and writes nothing. After the train write, the frozen
+    # val_*.jsonl set is hardlinked into the output_root.
+    freeze_val_source: Path | None = None
+    if cfg.freeze_val_from:
+        from dataclasses import replace
+        freeze_val_source = _resolve_freeze_source(cfg.freeze_val_from)
         log.info(
-            "Plant bucket: per-species dual-source split "
-            "(train=%s, val=%s)",
-            paths.plantnet_jsonl,
-            paths.plantnet_val_jsonl,
+            "freeze_val_from: %s -> %s (val sampling disabled, files "
+            "will be hardlinked after train write)",
+            cfg.freeze_val_from, freeze_val_source,
         )
+        cfg = replace(
+            cfg,
+            plant_val=0,
+            general_val=0,
+            smoltalk_val=0,
+            negative_val=0,
+            na_plantae_val=0,
+            offline_qa_val_ratio=0.0,
+        )
+
+    # --- Plant (PlantNet) ---
+    # v4: skipped entirely when the yaml omits the ``plant`` bucket OR
+    # sets all three plant_* fields to 0. NA-Plantae-backed mixes use this
+    # path to drop PlantNet without touching the rest of the pipeline.
+    plant_train: List[dict] = []
+    plant_val: List[dict] = []
+    if cfg.plant_train > 0 or cfg.plant_val > 0:
+        # v2: dual-source sampler if PLANTNET_VAL_JSONL resolves to an existing
+        # file (the per-species val output of prepare_plantnet_50k.sh). Falls
+        # back to the v1 single-source + random slice if no val.jsonl exists
+        # next to plantnet_jsonl — keeps mix-20k (the v1 cambrian config) and
+        # older smoke tests working without a re-prep.
+        if paths.plantnet_val_jsonl.exists():
+            plant_train, plant_val = sample_plant_records_split(
+                train_jsonl=paths.plantnet_jsonl,
+                val_jsonl=paths.plantnet_val_jsonl,
+                n_train=cfg.plant_train,
+                n_val=cfg.plant_val,
+                per_class_cap=cfg.plant_per_class_cap,
+                seed=cfg.seed,
+            )
+            log.info(
+                "Plant bucket: per-species dual-source split "
+                "(train=%s, val=%s)",
+                paths.plantnet_jsonl,
+                paths.plantnet_val_jsonl,
+            )
+        else:
+            log.warning(
+                "Plant bucket: PLANTNET_VAL_JSONL %s missing — falling back to "
+                "v1 single-source + random slice. Re-run prepare_plantnet_50k.sh "
+                "to produce a per-species val.jsonl and remove this warning.",
+                paths.plantnet_val_jsonl,
+            )
+            plant_pool = sample_plant_records(
+                jsonl_path=paths.plantnet_jsonl,
+                total=cfg.plant_train + cfg.plant_val,
+                per_class_cap=cfg.plant_per_class_cap,
+                seed=cfg.seed,
+            )
+            plant_train, plant_val = _split_train_val(
+                plant_pool, cfg.plant_train, cfg.plant_val
+            )
     else:
-        log.warning(
-            "Plant bucket: PLANTNET_VAL_JSONL %s missing — falling back to "
-            "v1 single-source + random slice. Re-run prepare_plantnet_50k.sh "
-            "to produce a per-species val.jsonl and remove this warning.",
-            paths.plantnet_val_jsonl,
-        )
-        plant_pool = sample_plant_records(
-            jsonl_path=paths.plantnet_jsonl,
-            total=cfg.plant_train + cfg.plant_val,
-            per_class_cap=cfg.plant_per_class_cap,
-            seed=cfg.seed,
-        )
-        plant_train, plant_val = _split_train_val(
-            plant_pool, cfg.plant_train, cfg.plant_val
+        log.info(
+            "Plant bucket: skipped (plant.train=0 and plant.val=0). "
+            "NA-Plantae / general buckets carry the load."
         )
 
     # --- smoltalk (text-only; image=None) ---
@@ -295,9 +465,84 @@ def build_mix(config_path: Path) -> Path:
             len(offline_qa_train), len(offline_qa_val),
         )
 
+    # --- v4: na_plantae bucket (optional, oversample-friendly). Skipped
+    # entirely when cfg.na_plantae_train_jsonl is None so v1/v2/v3 configs
+    # are bit-identical to their previous output.
+    na_plantae_train: List[dict] = []
+    na_plantae_val: List[dict] = []
+    if cfg.na_plantae_train_jsonl and (cfg.na_plantae_train > 0 or cfg.na_plantae_val > 0):
+        na_plantae_train_path = Path(cfg.na_plantae_train_jsonl)
+        if not na_plantae_train_path.is_absolute():
+            na_plantae_train_path = HIKECOMPANION_ROOT / na_plantae_train_path
+        if not na_plantae_train_path.exists():
+            raise FileNotFoundError(
+                f"na_plantae train JSONL not found: {na_plantae_train_path}"
+            )
+
+        # Val handling — eval/train leakage guard:
+        # * If na_plantae_val > 0, require a distinct val JSONL. We never
+        #   silently sample val records from the train pool: that would
+        #   make eval_<key>_loss measure memorisation rather than
+        #   degradation.
+        # * Default fallback: sibling ``val.jsonl`` next to the train
+        #   JSONL (matches the prepare_na_plantae.py output layout).
+        # * If the operator wants train-only with no na_plantae val, set
+        #   ``na_plantae.val: 0`` in the yaml.
+        na_plantae_val_path: Path | None = None
+        if cfg.na_plantae_val > 0:
+            if cfg.na_plantae_val_jsonl:
+                na_plantae_val_path = Path(cfg.na_plantae_val_jsonl)
+                if not na_plantae_val_path.is_absolute():
+                    na_plantae_val_path = HIKECOMPANION_ROOT / na_plantae_val_path
+            else:
+                na_plantae_val_path = na_plantae_train_path.parent / "val.jsonl"
+            if not na_plantae_val_path.exists():
+                raise FileNotFoundError(
+                    f"na_plantae val JSONL not found: {na_plantae_val_path}. "
+                    f"Set na_plantae.val_jsonl in the config or place a "
+                    f"val.jsonl next to {na_plantae_train_path}, OR set "
+                    f"na_plantae.val: 0 to skip the bucket's val slice."
+                )
+            if na_plantae_val_path.resolve() == na_plantae_train_path.resolve():
+                raise ValueError(
+                    "na_plantae val JSONL resolves to the same path as "
+                    "train JSONL — that would sample val records from "
+                    "the train pool (eval leakage). Set a distinct "
+                    "na_plantae.val_jsonl or na_plantae.val: 0."
+                )
+
+        # When na_plantae_val == 0 we still need *some* val path to satisfy
+        # the sampler signature; pass an empty list shim by reading the
+        # train JSONL but slicing 0 records out of it. The sampler short-
+        # circuits on n_val=0 so no records actually come back.
+        na_plantae_train, na_plantae_val = sample_na_plantae_records(
+            train_jsonl=na_plantae_train_path,
+            val_jsonl=na_plantae_val_path or na_plantae_train_path,
+            n_train=cfg.na_plantae_train,
+            n_val=cfg.na_plantae_val,
+            seed=cfg.seed,
+            train_temperature=cfg.na_plantae_train_temperature,
+            train_exclude_slugs=cfg.na_plantae_train_exclude_slugs,
+        )
+        log.info(
+            "na_plantae bucket: %d train (%s) / %d val (%s) "
+            "[train_temperature=%.2f, n_exclude=%d]",
+            len(na_plantae_train), na_plantae_train_path,
+            len(na_plantae_val),
+            na_plantae_val_path if na_plantae_val_path else "<no val>",
+            cfg.na_plantae_train_temperature,
+            len(cfg.na_plantae_train_exclude_slugs),
+        )
+
     # --- Combine and shuffle ---
-    train_all = plant_train + gen_train + smol_train + neg_train + offline_qa_train
-    val_all = plant_val + gen_val + smol_val + neg_val + offline_qa_val
+    train_all = (
+        plant_train + gen_train + smol_train + neg_train
+        + offline_qa_train + na_plantae_train
+    )
+    val_all = (
+        plant_val + gen_val + smol_val + neg_val
+        + offline_qa_val + na_plantae_val
+    )
     rng.shuffle(train_all)
     rng.shuffle(val_all)
 
@@ -306,26 +551,57 @@ def build_mix(config_path: Path) -> Path:
     report_path = paths.output_root / "build_report.json"
 
     _write_jsonl(train_all, train_path)
-    _write_jsonl(val_all, val_path)
 
-    # v2: also write per-eval-bucket val files so finetune can run
-    # multi-eval-dataset and report eval_<key>_loss per modality.
-    # v3: the ``offline_qa`` partition is only emitted when the bucket
-    # is configured AND non-empty — keeps v1/v2 outputs bit-identical.
-    val_partitions = _partition_val_by_source(val_all)
     val_files: Dict[str, str] = {}
-    for key, recs in val_partitions.items():
-        if key == "offline_qa" and not recs:
-            # Backward compat: only materialize val_offline_qa.jsonl when
-            # the bucket has at least one record (i.e. offline_qa is
-            # actually configured + has val_ratio > 0 + corpus N >= 2).
-            continue
-        # Always write the file for the legacy buckets, even if empty —
-        # downstream config knows to skip empties rather than crash on
-        # missing path.
-        dest = paths.output_root / f"val_{key}.jsonl"
-        _write_jsonl(recs, dest)
-        val_files[key] = str(dest)
+    freeze_report: dict[str, dict[str, str]] = {}
+    val_partitions: Dict[str, List[dict]] = {}
+
+    if freeze_val_source is not None:
+        # Val sampling was disabled above; val_all must be empty.
+        # Hardlink the val_*.jsonl set from the source mix instead.
+        if val_all:
+            raise RuntimeError(
+                "freeze_val_from is set but val_all is non-empty "
+                f"(n={len(val_all)}). One of the sampler paths "
+                "ignored its zeroed val count — refusing to mix "
+                "fresh + frozen val records."
+            )
+        freeze_report = _freeze_val_files(freeze_val_source, paths.output_root)
+        # Surface only the per-bucket val files the trainer references;
+        # ``val.jsonl`` is informational. Skip ``val_offline_qa.jsonl``
+        # in ``val_files`` when not present in the source dir (v1/v2
+        # back-compat — keep absent-bucket behaviour consistent).
+        for fname in (
+            "val_plant.jsonl",
+            "val_nonplant.jsonl",
+            "val_negative.jsonl",
+            "val_offline_qa.jsonl",
+        ):
+            dest = paths.output_root / fname
+            if dest.exists():
+                key = fname.removeprefix("val_").removesuffix(".jsonl")
+                val_files[key] = str(dest)
+    else:
+        _write_jsonl(val_all, val_path)
+        # v2: also write per-eval-bucket val files so finetune can run
+        # multi-eval-dataset and report eval_<key>_loss per modality.
+        # v3: the ``offline_qa`` partition is only emitted when the
+        # bucket is configured AND non-empty — keeps v1/v2 outputs
+        # bit-identical.
+        val_partitions = _partition_val_by_source(val_all)
+        for key, recs in val_partitions.items():
+            if key == "offline_qa" and not recs:
+                # Backward compat: only materialize val_offline_qa.jsonl
+                # when the bucket has at least one record (i.e.
+                # offline_qa is actually configured + has val_ratio > 0
+                # + corpus N >= 2).
+                continue
+            # Always write the file for the legacy buckets, even if
+            # empty — downstream config knows to skip empties rather
+            # than crash on missing path.
+            dest = paths.output_root / f"val_{key}.jsonl"
+            _write_jsonl(recs, dest)
+            val_files[key] = str(dest)
 
     report = {
         "seed": cfg.seed,
@@ -341,12 +617,27 @@ def build_mix(config_path: Path) -> Path:
             "image_root": str(paths.image_root),
             "plantnet_source": str(paths.plantnet_jsonl),
         },
+        "na_plantae": {
+            "train_exclude_slugs": list(cfg.na_plantae_train_exclude_slugs),
+            "train_temperature": cfg.na_plantae_train_temperature,
+        },
+        "frozen_val_from": (
+            {
+                "source_dir": str(freeze_val_source),
+                "files": freeze_report,
+            }
+            if freeze_val_source is not None
+            else None
+        ),
     }
     with report_path.open("w") as f:
         json.dump(report, f, indent=2)
 
     log.info("wrote %d train, %d val to %s", len(train_all), len(val_all), paths.output_root)
-    log.info("multi-val splits: %s", {k: len(v) for k, v in val_partitions.items()})
+    if val_partitions:
+        log.info("multi-val splits: %s", {k: len(v) for k, v in val_partitions.items()})
+    else:
+        log.info("val files frozen from %s", freeze_val_source)
     return report_path
 
 
