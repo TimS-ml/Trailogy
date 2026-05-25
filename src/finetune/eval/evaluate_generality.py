@@ -63,19 +63,6 @@ FINETUNE_DIR = Path(__file__).resolve().parents[1]
 
 
 # ---------------------------------------------------------------------------
-# Weights for composite generality score
-# ---------------------------------------------------------------------------
-DOMAIN_WEIGHTS = {
-    "plant": 0.25,
-    "mmlu": 0.25,
-    "aime": 0.15,
-    "llava": 0.15,
-    "refusal": 0.10,
-    "text_chat": 0.10,
-}
-
-
-# ---------------------------------------------------------------------------
 # Species extraction (shared with evaluate.py)
 # ---------------------------------------------------------------------------
 
@@ -1040,17 +1027,6 @@ def _aggregate_domain(results: list[dict], domain: str) -> dict:
     return agg
 
 
-def compute_generality_score(domain_results: dict[str, dict]) -> float:
-    """Weighted composite generality score (0-1)."""
-    total = 0.0
-    total_weight = 0.0
-    for domain, weight in DOMAIN_WEIGHTS.items():
-        if domain in domain_results and domain_results[domain]["n"] > 0:
-            total += weight * domain_results[domain]["score"]
-            total_weight += weight
-    return total / total_weight if total_weight > 0 else 0.0
-
-
 def main():
     parser = argparse.ArgumentParser(description="Multi-domain generality evaluation")
     parser.add_argument("--base_model", type=str, required=True,
@@ -1196,9 +1172,7 @@ def main():
         # Fail loud rather than silently dropping a requested domain.
         # The previous "warn + continue" behaviour produced reports that
         # looked successful but were missing whole metrics — easy to miss
-        # in a sweep, and the merged generality_score auto-renormalizes
-        # over present domains so the missing metric is invisible
-        # downstream.
+        # in a sweep.
         if eval_file is None:
             raise SystemExit(
                 f"unknown domain {domain!r}; supported: "
@@ -1252,9 +1226,6 @@ def main():
             prompt_prefix_camera_off=args.prompt_prefix_camera_off,
         )
 
-    # Compute composite score
-    generality_score = compute_generality_score(domain_results)
-
     # Build report
     report = {
         "config": {
@@ -1264,7 +1235,6 @@ def main():
             "qwen_model": args.qwen_model if not args.skip_judge else None,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         },
-        "generality_score": round(generality_score, 4),
         "domains": {},
     }
 
@@ -1275,7 +1245,7 @@ def main():
 
     # Print summary
     log.info(f"\n{'='*60}")
-    log.info(f"GENERALITY SCORE: {generality_score:.3f}")
+    log.info(f"PER-DOMAIN SCORES")
     log.info(f"{'='*60}")
     for domain, result in domain_results.items():
         score = result.get("score", 0)
