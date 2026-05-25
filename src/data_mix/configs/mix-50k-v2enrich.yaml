@@ -1,0 +1,76 @@
+# data_mix/configs/mix-50k-v2enrich.yaml
+#
+# v2 mix recipe (ratios + exclude list identical to mix-50k-v2.yaml)
+# but with the NA-Plantae **train** stream sourced from the v2-enrich
+# prepared dir (rich GBIF/Wikipedia captions built by
+# ``src/data_mix/src/build_enriched_captions.py``).
+#
+# What changes vs mix-50k-v2:
+#   * ``na_plantae.train_jsonl`` -> ``inaturalist_na_plantae_prepared_v2enrich/train.jsonl``
+#     (caption length ~5-10x v1: scientific name + other common names +
+#     wikipedia summary + truncated GBIF distribution).
+#   * Everything else (bucket counts, temperature, exclude list, llava/
+#     smoltalk/negative/offline_qa volumes) is identical to v2.
+#
+# What stays identical to v2:
+#   * ``freeze_val_from: "mix-50k"`` — val_*.jsonl are byte-frozen from
+#     v1 mix, so eval_<key>_loss is comparable across v1 / v2 / v2enrich.
+#   * ``na_plantae.val_jsonl`` stays on the v1-style short-caption
+#     prepared dir for the same reason (val is frozen anyway, but this
+#     keeps the build deterministic if freeze is ever turned off).
+#   * ``train_exclude_slugs`` — same 19 classes as v2; v2enrich is a
+#     pure caption-richness ablation, NOT a slug-coverage change.
+#
+# Total train rows ~ 50,038 — same as v2.
+
+seed: 42
+source: llava
+
+freeze_val_from: "mix-50k"
+
+na_plantae:
+  train: 30000
+  val: 1500            # ignored when freeze_val_from is set
+  train_jsonl: "../data/inaturalist_na_plantae_prepared_v2enrich/train.jsonl"
+  val_jsonl:   "../data/inaturalist_na_plantae_prepared/val.jsonl"
+  train_temperature: 0.75
+  # Identical to mix-50k-v2.yaml. v2enrich isolates the caption-richness
+  # variable; slug coverage is held constant.
+  train_exclude_slugs:
+    # 8 systematic-shared-drift victims (D-doc 12k -> 14k table)
+    - red_osier_dogwood
+    - cutleaf_coneflower
+    - bear_s_foot
+    - giant_reed
+    - catnip
+    - texas_mountain_laurel
+    - coastal_goldenbush
+    - buckbrush
+    # confusion partners (the wrong-but-confident predictions at 14k)
+    - american_black_elderberry
+    - cut_leaved_toothwort
+    - bigleaf_maple
+    - buttonbush
+    - white_vervain
+    - texas_persimmon
+    - gum_bumelia
+    - deerweed
+    - golden_yarrow
+    - yaupon_holly
+    - jojoba
+
+llava:
+  train: 7500
+  val:   750           # ignored when freeze_val_from is set
+
+smoltalk:
+  train: 7500
+  val:   375           # ignored when freeze_val_from is set
+
+negative:
+  train: 5000
+  val:   250           # ignored when freeze_val_from is set
+
+offline_qa:
+  path: "assets/data_offline_qa/offline_qa.json"
+  val_ratio: 0.1       # ignored when freeze_val_from is set
