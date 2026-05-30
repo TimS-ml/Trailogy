@@ -1,0 +1,27 @@
+data:
+  train_split: train
+  val_split: val
+  image_size: 448
+  num_workers: 12
+
+model:
+  backbone: eva02_base_patch14_448.mim_in22k_ft_in22k_in1k
+  pretrained: true
+  freeze_backbone: false
+  drop_path_rate: 0.1
+
+train:
+  output_dir: outputs/vit-baseline
+  num_train_epochs: 15
+  # 448px / patch14 = 1024 tokens — bs64 OOMs on 24 GB. Micro-batch 32 +
+  # accumulate to keep the effective batch at 64.
+  per_device_train_batch_size: 32
+  per_device_eval_batch_size: 64
+  gradient_accumulation_steps: 2
+  learning_rate: 3.0e-4
+  backbone_learning_rate: 3.0e-5
+  weight_decay: 0.05
+  warmup_epochs: 1.0
+  label_smoothing: 0.1
+  dtype: bfloat16
+  report_to: none

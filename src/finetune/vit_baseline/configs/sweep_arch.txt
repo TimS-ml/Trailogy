@@ -1,0 +1,8 @@
+# Architecture sweep queue for the ViT baseline (one config per line).
+# Lines starting with '#' and blank lines are skipped. Ordered most-promising
+# first so an interrupted sweep still lands the high-value runs.
+# Baseline already done: vit-base-siglip.yaml (224) -> top1 0.787.
+vit_baseline/configs/vit-base-siglip-384.yaml
+vit_baseline/configs/eva02-base-448.yaml
+vit_baseline/configs/vit-base-dinov2-reg-392.yaml
+vit_baseline/configs/vit-large-siglip-384.yaml
