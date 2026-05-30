@@ -1,0 +1,23 @@
+data:
+  train_split: train
+  val_split: val
+  image_size: 224
+  num_workers: 8
+
+model:
+  backbone: vit_base_patch16_siglip_224
+  pretrained: true
+  freeze_backbone: true
+
+train:
+  output_dir: outputs/vit-baseline
+  num_train_epochs: 20
+  per_device_train_batch_size: 128
+  per_device_eval_batch_size: 256
+  learning_rate: 1.0e-3
+  backbone_learning_rate: 0.0
+  weight_decay: 0.0
+  warmup_epochs: 1.0
+  label_smoothing: 0.1
+  dtype: bfloat16
+  report_to: none
