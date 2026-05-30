@@ -66,10 +66,18 @@ Field policy:
 
 Usage::
 
+    # Original v2enrich (long captions, ~800 chars / row)
     python src/data_mix/src/build_enriched_captions.py \\
         --input-root  data/inaturalist_na_plantae_prepared \\
         --enriched    data/inaturalist_na_plantae/species_enriched.jsonl \\
         --output-root data/inaturalist_na_plantae_prepared_v2enrich
+
+    # v2enrich-lite (~300 chars / row, common name >=3x, scientific >=2x)
+    python src/data_mix/src/build_enriched_captions.py \\
+        --mode lite_nameboost \\
+        --input-root  data/inaturalist_na_plantae_prepared \\
+        --enriched    data/inaturalist_na_plantae/species_enriched.jsonl \\
+        --output-root data/inaturalist_na_plantae_prepared_v2enrich_lite
 """
 from __future__ import annotations
 
@@ -95,6 +103,19 @@ MAX_DISTRIBUTION_REGIONS = 10
 # allows ~1200 chars ≈ 200-250 tokens, which is ~10x the legacy 25-token
 # target. Triggered cases get logged so they're not silent.
 MAX_CONTENT_CHARS = 1200
+
+# ---- lite_nameboost mode constants ------------------------------------
+# Lite mode targets ~250-400 chars / row to pull the NA-Plantae
+# token-mass share back toward the v2 baseline (~24 %) while keeping
+# enrichment content for the model to attend to. The "name-boost"
+# part: the common name appears 3x and the scientific name 2x per row,
+# pushing the species-name token gradient share back from v2enrich's
+# ~1.5 % toward v2's ~7-8 %.
+MAX_CONTENT_CHARS_LITE = 500
+MAX_DISTRIBUTION_REGIONS_LITE = 3
+MAX_WIKI_SENTENCE_CHARS_LITE = 180
+
+CAPTION_MODES = ("full", "lite_nameboost")
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -153,6 +174,34 @@ def _truncate_distribution(s: str | None, max_regions: int) -> str | None:
         regions = regions[:max_regions]
         regions.append(f"and {n_extra} more regions")
     return "; ".join(regions)
+
+
+def _first_sentence(text: str | None, max_chars: int) -> str | None:
+    """Extract the first sentence of ``text``, hard-capped at ``max_chars``.
+
+    Splits on the first ``". "`` boundary and returns ``"<first>."``. If
+    the first sentence exceeds ``max_chars``, hard-truncate at
+    ``max_chars - 1`` chars and append ``"…"``. Used by lite_nameboost
+    mode to keep the Wikipedia blurb on a tight budget while preserving
+    the leading clause that almost always contains the scientific
+    name.
+    """
+    if not text:
+        return None
+    s = text.strip()
+    if not s:
+        return None
+    # Split on ". " (most Wikipedia summaries are well-punctuated). Fall
+    # back to the whole string if there is no sentence boundary inside
+    # max_chars.
+    idx = s.find(". ")
+    if 0 < idx < max_chars:
+        first = s[: idx + 1]
+    else:
+        first = s
+    if len(first) > max_chars:
+        first = first[: max_chars - 1].rstrip() + "…"
+    return first
 
 
 def build_enriched_answer(
@@ -214,10 +263,82 @@ def build_enriched_answer(
     return " ".join(parts)
 
 
+def build_lite_nameboost_answer(
+    common_name: str,
+    scientific_name: str,
+    enriched: dict[str, Any] | None,
+) -> str:
+    """Lite caption variant: short prose with the species name repeated.
+
+    Target shape (4 sentences, ~250-400 chars):
+      [S1] Looks like {common} to me.                          # eval anchor
+      [S2] {common} is also called {scientific}.               # name repeat
+      [S3] {wikipedia_first_sentence}                          # ~scientific name
+      [S4] {common} native range: {dist_top3}.                 # name repeat
+
+    Guarantees per row (when fields are present):
+      common name appears >= 3x, scientific name appears >= 2x.
+
+    Skips any sentence whose source field is missing. Falls back to
+    the compact form when ``enriched`` is ``None``.
+    """
+    # Sentence 1 — DO NOT CHANGE. Same eval-anchor invariant as
+    # build_enriched_answer. The plant scorer regex anchors on
+    # "Looks like {X} to me." at the start of generation.
+    parts: list[str] = [f"Looks like {common_name} to me."]
+
+    if enriched is None:
+        # Compact fallback identical to the full-mode fallback so the
+        # eval anchor + scientific-name clause survive.
+        if scientific_name and scientific_name != "(unknown)":
+            parts.append(
+                f"{scientific_name}, commonly called {common_name}."
+            )
+        return " ".join(parts)
+
+    sci = scientific_name if scientific_name and scientific_name != "(unknown)" else None
+
+    # Sentence 2 — common-name to scientific-name binding. Only emitted
+    # when both names are present and distinct (case-insensitive) to
+    # avoid the degenerate "Foo is also called Foo." case.
+    if sci and sci.lower() != common_name.lower():
+        parts.append(f"{common_name} is also called {sci}.")
+
+    # Sentence 3 — Wikipedia first sentence (capped). This is where the
+    # enrichment value lives; almost always contains the scientific
+    # name in the leading clause (Wikipedia convention).
+    blurb = enriched.get("wikipedia_summary") or enriched.get(
+        "best_description"
+    )
+    first = _first_sentence(blurb, MAX_WIKI_SENTENCE_CHARS_LITE)
+    if first:
+        parts.append(first)
+
+    # Sentence 4 — native range with the common name reprised. Capped
+    # at MAX_DISTRIBUTION_REGIONS_LITE regions so the tail stays small.
+    dist = _truncate_distribution(
+        enriched.get("gbif_distribution"), MAX_DISTRIBUTION_REGIONS_LITE
+    )
+    if dist:
+        parts.append(f"{common_name} native range: {dist}.")
+
+    return " ".join(parts)
+
+
+# Dispatch table for the assistant-content builders. Keyed by the
+# value of the ``--mode`` CLI flag (also exposed in CAPTION_MODES so
+# argparse can validate the choices).
+_BUILDERS = {
+    "full": build_enriched_answer,
+    "lite_nameboost": build_lite_nameboost_answer,
+}
+
+
 def _rebuild_row(
     row: dict[str, Any],
     enriched_by_slug: dict[str, dict[str, Any]],
     truncated_counter: Counter,
+    mode: str = "full",
 ) -> tuple[dict[str, Any], bool]:
     """Return (new_row, had_enrichment).
 
@@ -225,6 +346,12 @@ def _rebuild_row(
     Only conversations[1].content is rebuilt; conversations[0]
     (the user question template) is unchanged so the question-side
     variety is preserved.
+
+    ``mode`` selects the assistant-content builder:
+      * ``"full"`` — original v2enrich rebuild (long, ~800 chars / row).
+      * ``"lite_nameboost"`` — short rebuild with the species name
+        repeated (~250-400 chars / row). See
+        ``build_lite_nameboost_answer`` for the contract.
     """
     slug = row.get("slug", "")
     species = row.get("species") or "(unknown)"
@@ -237,10 +364,17 @@ def _rebuild_row(
         if enriched and enriched.get("common_name")
         else slug.replace("_", " ")
     )
-    answer = build_enriched_answer(common, species, enriched)
-    if len(answer) > MAX_CONTENT_CHARS:
+    try:
+        builder = _BUILDERS[mode]
+    except KeyError as exc:
+        raise ValueError(
+            f"unknown caption mode {mode!r}; expected one of {CAPTION_MODES}"
+        ) from exc
+    answer = builder(common, species, enriched)
+    cap = MAX_CONTENT_CHARS_LITE if mode == "lite_nameboost" else MAX_CONTENT_CHARS
+    if len(answer) > cap:
         truncated_counter[slug] += 1
-        answer = answer[: MAX_CONTENT_CHARS - 1].rstrip() + "…"
+        answer = answer[: cap - 1].rstrip() + "…"
 
     new_convs = list(row.get("conversations", []))
     if len(new_convs) < 2:
@@ -306,6 +440,17 @@ def main() -> None:
              "Use for smoke tests; production runs leave it 0.",
     )
     parser.add_argument(
+        "--mode",
+        choices=list(CAPTION_MODES),
+        default="full",
+        help="Caption-rebuild mode. 'full' = original v2enrich behaviour "
+             "(~800 chars / row, long GBIF+Wikipedia prose). "
+             "'lite_nameboost' = short prose (~300 chars / row) with the "
+             "common name repeated >=3x and the scientific name >=2x; "
+             "pulls the NA-Plantae token-mass share back toward the v2 "
+             "baseline while preserving enrichment content.",
+    )
+    parser.add_argument(
         "--log-level", default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
     )
@@ -330,13 +475,26 @@ def main() -> None:
     sym_msg = _symlink_images(args.input_root, args.output_root)
     log.info(sym_msg)
 
+    if args.mode == "lite_nameboost":
+        mode_caps = {
+            "mode": args.mode,
+            "max_distribution_regions": MAX_DISTRIBUTION_REGIONS_LITE,
+            "max_content_chars": MAX_CONTENT_CHARS_LITE,
+            "max_wiki_sentence_chars": MAX_WIKI_SENTENCE_CHARS_LITE,
+        }
+    else:
+        mode_caps = {
+            "mode": args.mode,
+            "max_distribution_regions": MAX_DISTRIBUTION_REGIONS,
+            "max_content_chars": MAX_CONTENT_CHARS,
+        }
+
     report: dict[str, Any] = {
         "input_root": str(args.input_root.resolve()),
         "enriched": str(args.enriched.resolve()),
         "output_root": str(args.output_root.resolve()),
         "enriched_unique_slugs": len(enriched_by_slug),
-        "max_distribution_regions": MAX_DISTRIBUTION_REGIONS,
-        "max_content_chars": MAX_CONTENT_CHARS,
+        **mode_caps,
         "splits": {},
     }
 
@@ -359,7 +517,7 @@ def main() -> None:
 
         for row in rows_in:
             new_row, had_enrich = _rebuild_row(
-                row, enriched_by_slug, truncated_counter
+                row, enriched_by_slug, truncated_counter, mode=args.mode,
             )
             rebuilt.append(new_row)
             old_lens.append(
@@ -395,10 +553,11 @@ def main() -> None:
     if truncated_counter:
         log.warning(
             "truncated %d rows across %d unique slugs at "
-            "MAX_CONTENT_CHARS=%d",
+            "max_content_chars=%d (mode=%s)",
             sum(truncated_counter.values()),
             len(truncated_counter),
-            MAX_CONTENT_CHARS,
+            mode_caps["max_content_chars"],
+            args.mode,
         )
     report["n_rows_truncated"] = int(sum(truncated_counter.values()))
     report["n_unique_slugs_truncated"] = len(truncated_counter)
