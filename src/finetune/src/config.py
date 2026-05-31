@@ -51,6 +51,11 @@ class ModelConfig:
     # (V100/T4) where Gemma 4 attention is numerically unstable in fp16.
     # Set to "float16" / "float32" / None (auto-detect) to override.
     dtype: Optional[str] = "bfloat16"
+    # VLM-only (vlm_sft pipeline; ignored by the unsloth Gemma path): cap the
+    # number of image tiles for tiling processors (e.g. InternVL's dynamic
+    # patching). None = model default. Used to keep the per-image token count
+    # within max_seq_length. Has no effect on Gemma / Qwen3-VL.
+    image_max_patches: Optional[int] = None
 
 
 @dataclass

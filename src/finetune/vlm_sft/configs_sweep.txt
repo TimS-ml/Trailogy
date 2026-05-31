@@ -1,0 +1,8 @@
+# VLM vision-tower SFT sweep queue (one config per line, '#'/blank skipped).
+# 6 runs: {Qwen3.5-4B, InternVL3.5-4B-HF} x {vision-only, vision+LoRA r64, LoRA r64-only}.
+configs/local_sweep/vtower-nokl-local-30k-v3-qwen.yaml
+configs/local_sweep/r64-a64-nokl-vtower-local-30k-v3-qwen.yaml
+configs/local_sweep/r64-a64-nokl-local-30k-v3-qwen.yaml
+configs/local_sweep/vtower-nokl-local-30k-v3-internvl.yaml
+configs/local_sweep/r64-a64-nokl-vtower-local-30k-v3-internvl.yaml
+configs/local_sweep/r64-a64-nokl-local-30k-v3-internvl.yaml
