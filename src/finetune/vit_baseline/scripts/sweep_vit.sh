@@ -39,7 +39,7 @@ while IFS= read -r cfg || [ -n "$cfg" ]; do
   run_name="$(basename "$cfg" .yaml)"
   echo ""
   echo "### [$(date +%H:%M:%S)] running $cfg -> run_name=$run_name"
-  python -m vit_baseline.train --config "$cfg" --run-name "$run_name"
+  "${PYTHON:-python}" -m vit_baseline.train --config "$cfg" --run-name "$run_name"
   rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "### WARN: $run_name exited rc=$rc — continuing to next config" >&2

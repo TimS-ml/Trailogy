@@ -23,4 +23,6 @@ if [ -z "${PLANT_IMAGE_ROOT:-}" ]; then
   echo "WARN: PLANT_IMAGE_ROOT not set; relying on data.image_root in the YAML." >&2
 fi
 
-python -m vit_baseline.train --config "$CONFIG" "$@"
+# PYTHON env var lets you point at a specific interpreter / conda env without
+# baking a path into the tracked script.
+"${PYTHON:-python}" -m vit_baseline.train --config "$CONFIG" "$@"
