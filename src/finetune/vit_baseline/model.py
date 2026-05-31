@@ -22,13 +22,29 @@ def build_model(
     drop_rate: float = 0.0,
     drop_path_rate: float = 0.0,
     freeze_backbone: bool = False,
+    image_size: int | None = None,
 ):
     """Create a timm classification model and (optionally) freeze the trunk.
 
     Returns the ``nn.Module``. The classifier head is left trainable in all
     cases; ``freeze_backbone=True`` gives a linear-probe baseline.
+
+    When ``image_size`` differs from the backbone's native input (e.g. running
+    DINOv2 — fixed at 518 — at 392), it is passed as ``img_size`` so timm
+    rebuilds / interpolates the position embeddings for that resolution.
+    Backbones that don't take ``img_size`` (e.g. ConvNeXt, which is
+    resolution-agnostic) silently ignore it.
     """
     import timm
+
+    extra = {}
+    if image_size is not None:
+        try:
+            extra["img_size"] = image_size
+            timm.create_model(backbone, pretrained=False, num_classes=0, **extra)
+        except (TypeError, RuntimeError):
+            # Backbone does not accept img_size — drop it and rely on native.
+            extra = {}
 
     model = timm.create_model(
         backbone,
@@ -36,6 +52,7 @@ def build_model(
         num_classes=num_classes,
         drop_rate=drop_rate,
         drop_path_rate=drop_path_rate,
+        **extra,
     )
 
     if freeze_backbone:

@@ -2,7 +2,9 @@ data:
   train_split: train
   val_split: val
   image_size: 448
-  num_workers: 12
+  # 448px tensors are large; 12 workers exhausted /dev/shm. 6 is plenty since
+  # the GPU is the bottleneck at this resolution.
+  num_workers: 6
 
 model:
   backbone: eva02_base_patch14_448.mim_in22k_ft_in22k_in1k

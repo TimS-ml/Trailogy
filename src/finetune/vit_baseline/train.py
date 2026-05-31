@@ -181,6 +181,7 @@ def main() -> None:
         drop_rate=cfg.model.drop_rate,
         drop_path_rate=cfg.model.drop_path_rate,
         freeze_backbone=cfg.model.freeze_backbone,
+        image_size=cfg.data.image_size,
     ).to(device)
     if cfg.train.torch_compile:
         model = torch.compile(model)
