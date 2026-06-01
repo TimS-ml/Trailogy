@@ -56,6 +56,11 @@ class ModelConfig:
     # patching). None = model default. Used to keep the per-image token count
     # within max_seq_length. Has no effect on Gemma / Qwen3-VL.
     image_max_patches: Optional[int] = None
+    # VLM-only (vlm_sft): cap a single image to this many pixels for
+    # resolution-driven processors (e.g. Qwen3-VL's min/max_pixels). Keeps the
+    # per-image token count bounded (and comparable across backbones). None =
+    # model default. No effect on Gemma / InternVL.
+    image_max_pixels: Optional[int] = None
 
 
 @dataclass

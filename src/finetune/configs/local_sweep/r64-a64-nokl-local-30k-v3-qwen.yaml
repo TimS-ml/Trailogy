@@ -4,6 +4,7 @@ model:
   load_in_4bit: false
   full_finetuning: false
   dtype: bfloat16
+  image_max_pixels: 200704
 
 lora:
   # mode: LLM LoRA r64 only (vision tower frozen)

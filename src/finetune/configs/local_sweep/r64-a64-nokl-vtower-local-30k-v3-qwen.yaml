@@ -4,6 +4,7 @@ model:
   load_in_4bit: false
   full_finetuning: false
   dtype: bfloat16
+  image_max_pixels: 200704
 
 lora:
   # mode: vision tower (full SFT) + LLM LoRA r64

@@ -76,20 +76,37 @@ class VlmSftCollator:
     """Collate JSONL records into a padded model batch with masked labels."""
 
     def __init__(self, processor, prompt_prefixes: Optional[Dict[str, str]] = None,
-                 max_length: int = 1024, image_max_patches: Optional[int] = None):
+                 max_length: int = 1024, image_max_patches: Optional[int] = None,
+                 image_max_pixels: Optional[int] = None):
         self.processor = processor
         self.prompt_prefixes = prompt_prefixes
         self.max_length = max_length
         self.tokenizer = getattr(processor, "tokenizer", processor)
         pad = getattr(self.tokenizer, "pad_token_id", None)
         self.pad_token_id = pad if pad is not None else 0
+        ip = getattr(processor, "image_processor", None)
         # Cap image tiles for tiling processors (InternVL) so one image stays
         # within max_length. No-op for processors without a tiling knob.
-        if image_max_patches is not None:
-            ip = getattr(processor, "image_processor", None)
-            if ip is not None and hasattr(ip, "max_patches"):
-                ip.max_patches = image_max_patches
-                log.info("capped image_processor.max_patches=%d", image_max_patches)
+        if image_max_patches is not None and ip is not None and hasattr(ip, "max_patches"):
+            ip.max_patches = image_max_patches
+            log.info("capped image_processor.max_patches=%d", image_max_patches)
+        # Cap pixels for resolution processors (Qwen3-VL's Qwen2VLImageProcessor)
+        # → bounded image-token count. The knob is size.longest_edge (max
+        # pixels after smart-resize). `size` is a SizeDict (attribute access,
+        # not a plain dict). No-op for processors without it.
+        if image_max_pixels is not None and ip is not None:
+            applied = False
+            size = getattr(ip, "size", None)
+            if size is not None and hasattr(size, "longest_edge"):
+                size.longest_edge = image_max_pixels
+                if getattr(size, "shortest_edge", 0) and size.shortest_edge > image_max_pixels:
+                    size.shortest_edge = image_max_pixels
+                applied = True
+            if hasattr(ip, "max_pixels"):
+                ip.max_pixels = image_max_pixels
+                applied = True
+            if applied:
+                log.info("capped image max_pixels=%d (Qwen-style)", image_max_pixels)
 
     def _render_one(self, record: Dict[str, Any]):
         from src.data import build_vision_messages

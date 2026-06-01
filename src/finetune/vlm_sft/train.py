@@ -22,7 +22,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--config", type=str, required=True)
     p.add_argument("--run-name", dest="run_name", type=str, default=None)
     p.add_argument("--max-steps", dest="max_steps", type=int, default=None)
+    # Soft stop: end this run at N global steps WITHOUT changing the LR
+    # scheduler horizon (which stays at the config's max_steps). Lets us train
+    # to 12k now and resume the SAME cosine schedule toward 30k later.
+    p.add_argument("--stop-at-steps", dest="stop_at_steps", type=int, default=None)
+    p.add_argument("--resume-from-checkpoint", dest="resume_from_checkpoint",
+                   type=str, default=None)
     p.add_argument("--max-train-samples", dest="max_train_samples", type=int, default=None)
+    p.add_argument("--max-val-samples", dest="max_val_samples", type=int, default=None)
     p.add_argument("--report-to", dest="report_to", type=str, default=None)
     return p.parse_args()
 
@@ -62,6 +69,8 @@ def main() -> None:
     cfg = load_config(args.config, overrides or None)
     if args.max_train_samples is not None:
         cfg.data.max_train_samples = args.max_train_samples
+    if args.max_val_samples is not None:
+        cfg.data.max_val_samples = args.max_val_samples
 
     run_name = args.run_name or cfg.training.run_name or (
         f"{Path(args.config).stem}_{datetime.now():%Y%m%d_%H%M%S}"
@@ -98,6 +107,7 @@ def main() -> None:
         prompt_prefixes=cfg.data.prompt_prefixes,
         max_length=cfg.model.max_seq_length,
         image_max_patches=cfg.model.image_max_patches,
+        image_max_pixels=cfg.model.image_max_pixels,
     )
     log.info("data: train=%d eval=%s", len(train_ds), len(eval_ds) if eval_ds else 0)
 
@@ -155,8 +165,25 @@ def main() -> None:
         data_collator=collator,
     )
 
+    # Soft stop at a step count below the scheduler horizon (for staged 12k→30k).
+    if args.stop_at_steps is not None:
+        from transformers import TrainerCallback
+
+        class _SoftStop(TrainerCallback):
+            def __init__(self, stop_at):
+                self.stop_at = stop_at
+
+            def on_step_end(self, args, state, control, **kw):
+                if state.global_step >= self.stop_at:
+                    control.should_training_stop = True
+                return control
+
+        trainer.add_callback(_SoftStop(args.stop_at_steps))
+        log.info("soft-stop at %d steps (scheduler horizon = %s)",
+                 args.stop_at_steps, cfg.training.max_steps)
+
     log.info("starting training (vision_lr=%.1e, lora_lr=%.1e)", vision_lr, cfg.training.learning_rate)
-    trainer.train()
+    trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     trainer.save_model(out_dir)
     processor.save_pretrained(out_dir)
     log.info("done -> %s", out_dir)
