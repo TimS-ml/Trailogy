@@ -58,6 +58,21 @@ def vision_param_names(model) -> List[str]:
     return [n for n, _ in model.named_parameters() if is_vision_param(n)]
 
 
+def vision_module_markers(model) -> List[str]:
+    """Markers that correspond to an actual vision-tower root module.
+
+    Used as PEFT ``modules_to_save`` so the (fully-trained) vision tower is
+    saved alongside the LoRA adapter — otherwise PEFT's adapter-only save
+    silently drops the trained vision weights.
+    """
+    present = []
+    names = [n for n, _ in model.named_modules()]
+    for m in _VISION_MARKERS:
+        if any(n == m or n.endswith("." + m) for n in names):
+            present.append(m)
+    return present
+
+
 def apply_mode(model, *, finetune_vision_layers: bool, finetune_language_layers: bool,
                lora_r: int, lora_alpha: int, lora_dropout: float, random_state: int = 3407):
     """Configure trainable params for the requested mode.
@@ -83,21 +98,25 @@ def apply_mode(model, *, finetune_vision_layers: bool, finetune_language_layers:
             raise ValueError("finetune_language_layers=True requires lora r > 0")
         from peft import LoraConfig, get_peft_model
 
+        # When co-training the vision tower, register it as modules_to_save so
+        # PEFT keeps it trainable AND saves it with the adapter (adapter-only
+        # save would otherwise drop the trained vision weights). PEFT then
+        # manages requires_grad for those modules, so no manual unfreeze needed.
+        modules_to_save = vision_module_markers(model) if finetune_vision_layers else None
         peft_cfg = LoraConfig(
             r=lora_r,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
             bias="none",
             target_modules=_LLM_LORA_REGEX,
+            modules_to_save=modules_to_save,
             task_type="CAUSAL_LM",
         )
         model = get_peft_model(model, peft_cfg)
         info["lora"] = True
-        # get_peft_model re-freezes the base; vision unfreeze (if any) happens
-        # below on the now-wrapped model (names gain a "base_model.model." prefix
-        # but still contain the vision markers, so is_vision_param still matches).
-
-    if finetune_vision_layers:
+        info["modules_to_save"] = modules_to_save
+    elif finetune_vision_layers:
+        # vision-only mode (no LoRA): unfreeze the vision tower directly.
         unfrozen = 0
         for n, p in model.named_parameters():
             if is_vision_param(n):

@@ -130,7 +130,12 @@ def main() -> None:
         lr_scheduler_type=cfg.training.lr_scheduler_type,
         seed=cfg.training.seed,
         save_steps=cfg.training.save_steps,
-        save_total_limit=cfg.training.save_total_limit,
+        # Bound disk: full-model (vision-only) checkpoints are ~7.5 GB each.
+        # Default to 2 when the config leaves it unset.
+        save_total_limit=cfg.training.save_total_limit or 2,
+        # torch.save (not safetensors): the full VLM has tied lm_head/embeddings
+        # whose shared storage safetensors refuses to serialize.
+        save_safetensors=False,
         report_to=cfg.training.report_to,
         dataloader_num_workers=cfg.training.dataloader_num_workers,
         dataloader_pin_memory=cfg.training.dataloader_pin_memory,
