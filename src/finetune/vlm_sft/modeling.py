@@ -98,25 +98,23 @@ def apply_mode(model, *, finetune_vision_layers: bool, finetune_language_layers:
             raise ValueError("finetune_language_layers=True requires lora r > 0")
         from peft import LoraConfig, get_peft_model
 
-        # When co-training the vision tower, register it as modules_to_save so
-        # PEFT keeps it trainable AND saves it with the adapter (adapter-only
-        # save would otherwise drop the trained vision weights). PEFT then
-        # manages requires_grad for those modules, so no manual unfreeze needed.
-        modules_to_save = vision_module_markers(model) if finetune_vision_layers else None
         peft_cfg = LoraConfig(
             r=lora_r,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
             bias="none",
             target_modules=_LLM_LORA_REGEX,
-            modules_to_save=modules_to_save,
             task_type="CAUSAL_LM",
         )
         model = get_peft_model(model, peft_cfg)
         info["lora"] = True
-        info["modules_to_save"] = modules_to_save
-    elif finetune_vision_layers:
-        # vision-only mode (no LoRA): unfreeze the vision tower directly.
+
+    if finetune_vision_layers:
+        # Unfreeze the vision tower directly (requires_grad). We do NOT use
+        # PEFT modules_to_save: wrapping a whole vision tower breaks its forward
+        # signature. The trained vision params are saved separately by the
+        # save-extra-trainable callback in train.py (PEFT's adapter-only save
+        # would otherwise drop them).
         unfrozen = 0
         for n, p in model.named_parameters():
             if is_vision_param(n):

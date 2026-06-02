@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
                    type=str, default=None)
     p.add_argument("--max-train-samples", dest="max_train_samples", type=int, default=None)
     p.add_argument("--max-val-samples", dest="max_val_samples", type=int, default=None)
+    p.add_argument("--save-total-limit", dest="save_total_limit", type=int, default=None)
     p.add_argument("--report-to", dest="report_to", type=str, default=None)
     return p.parse_args()
 
@@ -131,11 +132,8 @@ def main() -> None:
         seed=cfg.training.seed,
         save_steps=cfg.training.save_steps,
         # Bound disk: full-model (vision-only) checkpoints are ~7.5 GB each.
-        # Default to 2 when the config leaves it unset.
-        save_total_limit=cfg.training.save_total_limit or 2,
-        # torch.save (not safetensors): the full VLM has tied lm_head/embeddings
-        # whose shared storage safetensors refuses to serialize.
-        save_safetensors=False,
+        # CLI override wins; else config; else default 2.
+        save_total_limit=args.save_total_limit or cfg.training.save_total_limit or 2,
         report_to=cfg.training.report_to,
         dataloader_num_workers=cfg.training.dataloader_num_workers,
         dataloader_pin_memory=cfg.training.dataloader_pin_memory,
@@ -170,6 +168,25 @@ def main() -> None:
         data_collator=collator,
     )
 
+    # Save/restore vision-tower params trained alongside a LoRA adapter. PEFT's
+    # adapter-only checkpoint drops non-LoRA trainable params, so we persist
+    # them next to each checkpoint and reload on resume. (vision-only mode is a
+    # plain model whose full checkpoint already includes them — skip there.)
+    import os
+
+    is_peft_plus_vision = cfg.lora.finetune_language_layers and cfg.lora.finetune_vision_layers
+
+    def _extra_trainable_state(m):
+        return {n: p.detach().cpu() for n, p in m.named_parameters()
+                if p.requires_grad and "lora_" not in n}
+
+    if args.resume_from_checkpoint and is_peft_plus_vision:
+        extra_path = os.path.join(args.resume_from_checkpoint, "extra_trainable.pt")
+        if os.path.exists(extra_path):
+            missing = model.load_state_dict(torch.load(extra_path, map_location="cpu"), strict=False)
+            log.info("restored %d extra (vision) tensors from %s",
+                     len(torch.load(extra_path, map_location="cpu")), extra_path)
+
     # Soft stop at a step count below the scheduler horizon (for staged 12k→30k).
     if args.stop_at_steps is not None:
         from transformers import TrainerCallback
@@ -187,9 +204,23 @@ def main() -> None:
         log.info("soft-stop at %d steps (scheduler horizon = %s)",
                  args.stop_at_steps, cfg.training.max_steps)
 
+    if is_peft_plus_vision:
+        from transformers import TrainerCallback
+
+        class _SaveExtraTrainable(TrainerCallback):
+            def on_save(self, args, state, control, **kw):
+                ckpt = os.path.join(args.output_dir, f"checkpoint-{state.global_step}")
+                if os.path.isdir(ckpt):
+                    torch.save(_extra_trainable_state(model),
+                               os.path.join(ckpt, "extra_trainable.pt"))
+
+        trainer.add_callback(_SaveExtraTrainable())
+
     log.info("starting training (vision_lr=%.1e, lora_lr=%.1e)", vision_lr, cfg.training.learning_rate)
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     trainer.save_model(out_dir)
+    if is_peft_plus_vision:
+        torch.save(_extra_trainable_state(model), os.path.join(out_dir, "extra_trainable.pt"))
     processor.save_pretrained(out_dir)
     log.info("done -> %s", out_dir)
 
