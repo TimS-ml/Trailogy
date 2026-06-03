@@ -969,9 +969,23 @@ def _generate_hf(handle, user_content: str, image_path: str | None, max_new_toke
     if image_path and Path(image_path).exists():
         image = PILImage.open(image_path).convert("RGB")
 
-    prompt_text = handle.processor.apply_chat_template(
-        messages, add_generation_prompt=True, tokenize=False,
-    )
+    # Suppress chain-of-thought for reasoning backbones (Qwen3.5's template
+    # appends a `<think>` block by default). Greedy 256-token decode never
+    # reaches the answer letter behind the reasoning, and score_mmlu only
+    # reads the first 20 chars → every mmlu/aime sample scores 0 as a pure
+    # measurement artifact. enable_thinking=False pre-closes the think block
+    # so the model answers concisely (matching the concise-SFT distribution).
+    # No-op (byte-identical) for InternVL / Gemma templates; fall back if a
+    # processor rejects the kwarg.
+    try:
+        prompt_text = handle.processor.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=False,
+            enable_thinking=False,
+        )
+    except (TypeError, ValueError):
+        prompt_text = handle.processor.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=False,
+        )
 
     proc_kwargs = {"text": prompt_text, "return_tensors": "pt"}
     if image is not None:
