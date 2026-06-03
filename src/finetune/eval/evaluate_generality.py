@@ -655,22 +655,101 @@ def _load_mlx_vlm(args):
 
 
 def _load_hf_direct(args):
-    """Load via HF transformers directly (legacy path)."""
+    """Load via HF transformers directly (legacy path).
+
+    Backbone-agnostic (``AutoModelForImageTextToText``), so it serves the
+    Gemma / InternVL / Qwen backbone bake-off. Two extras beyond the bare
+    base+LoRA path:
+
+    * **vtower runs** train the vision tower as full (non-LoRA) params that
+      PEFT's adapter-only checkpoint drops. Those are persisted separately
+      as ``extra_trainable.pt`` by the vlm_sft trainer; we reload them with
+      ``strict=False`` after the LoRA merge so eval scores the *trained*
+      vision tower, not the base one. Without this the vision-side of a
+      vtower run is silently reverted to base weights.
+    * **Apple Silicon (MPS)** can't run the bulk ``caching_allocator_warmup``
+      (single tensor > INT_MAX elements) and ``device_map="auto"`` strands
+      layers on meta/disk, breaking PEFT load. Force all-MPS placement and
+      neuter the warmup there (mirrors the registry loader's workaround).
+    """
+    import os
+    import platform as _platform
+
     import torch
     from transformers import AutoModelForImageTextToText, AutoProcessor
     from peft import PeftModel
 
-    log.info(f"Loading base model: {args.base_model}")
-    processor = AutoProcessor.from_pretrained(args.base_model)
+    is_mac = _platform.system() == "Darwin"
+    device_map = "mps" if is_mac else "auto"
+    if is_mac:
+        try:
+            import transformers.modeling_utils as _mu
+            _mu.caching_allocator_warmup = lambda *a, **kw: None
+        except Exception:
+            pass
+
+    log.info(f"Loading base model: {args.base_model} (device_map={device_map})")
+    processor = AutoProcessor.from_pretrained(args.base_model, trust_remote_code=True)
+
+    # Match training-time image tiling. A tiling processor (InternVL) expands
+    # one image placeholder into N image tokens by resolution; if eval uses a
+    # different tile cap than training, the chat-template token count and the
+    # processor feature count diverge on large images and generation aborts
+    # with an image-features/tokens mismatch.
+    img_max_patches = getattr(args, "image_max_patches", None)
+    if img_max_patches is not None:
+        ip = getattr(processor, "image_processor", None)
+        if ip is not None and hasattr(ip, "max_patches"):
+            ip.max_patches = img_max_patches
+            log.info("capped image_processor.max_patches=%d", img_max_patches)
+        else:
+            log.warning("--image_max_patches set but processor has no "
+                        "image_processor.max_patches; ignoring.")
     model = AutoModelForImageTextToText.from_pretrained(
         args.base_model,
         torch_dtype=torch.bfloat16,
-        device_map="auto",
+        device_map=device_map,
+        trust_remote_code=True,
     )
     if args.adapter_path:
         log.info(f"Loading adapter: {args.adapter_path}")
         model = PeftModel.from_pretrained(model, args.adapter_path)
         model = model.merge_and_unload()
+        leftover = [n for n, _ in model.named_parameters() if "lora_" in n.lower()]
+        assert not leftover, (
+            f"PEFT merge_and_unload left {len(leftover)} lora_* params behind; "
+            f"first few: {leftover[:5]}. Adapter not properly merged."
+        )
+
+    # Reload non-LoRA trainable params (vtower vision tower etc.). Explicit
+    # flag wins; otherwise auto-detect next to the adapter.
+    extra_path = getattr(args, "extra_trainable_path", None)
+    if extra_path is None and args.adapter_path:
+        cand = os.path.join(args.adapter_path, "extra_trainable.pt")
+        if os.path.exists(cand):
+            extra_path = cand
+    if extra_path:
+        if not os.path.exists(extra_path):
+            raise SystemExit(f"--extra_trainable_path not found: {extra_path}")
+        log.info(f"Loading extra trainable (vision) tensors: {extra_path}")
+        state = torch.load(extra_path, map_location="cpu")
+        # extra_trainable.pt is saved from the PEFT-wrapped model, so keys are
+        # prefixed ``base_model.model.`` (PeftModel -> LoraModel -> base). After
+        # merge_and_unload the model is the bare base, whose params drop that
+        # prefix. Strip it so the names line up.
+        if state and all(k.startswith("base_model.model.") for k in state):
+            state = {k[len("base_model.model."):]: v for k, v in state.items()}
+        # Cast to the model dtype/device on load via load_state_dict; module
+        # params already live on the target device, assign=False copies in.
+        result = model.load_state_dict(state, strict=False)
+        loaded = len(state) - len(getattr(result, "unexpected_keys", []))
+        if getattr(result, "unexpected_keys", []):
+            raise SystemExit(
+                f"extra_trainable.pt has {len(result.unexpected_keys)} keys not "
+                f"in the model — wrong checkpoint/base pairing? "
+                f"first few: {list(result.unexpected_keys)[:5]}"
+            )
+        log.info("restored %d extra (vision) tensors from %s", loaded, extra_path)
     model.eval()
 
     class HFHandle:
@@ -1033,6 +1112,21 @@ def main():
                         help="HF model ID, local path, or HF repo path for MLX models")
     parser.add_argument("--adapter_path", type=str, default=None,
                         help="LoRA adapter path (HF loaders only, ignored for mlx_vlm)")
+    parser.add_argument("--image_max_patches", type=int, default=None,
+                        help="Cap a tiling image processor's tiles per image "
+                             "(InternVL image_processor.max_patches). MUST match "
+                             "training (vlm_sft image_max_patches) or the chat "
+                             "template's image-token count and the processor's "
+                             "image-feature count diverge on large images "
+                             "(AcceleratorError: image features/tokens mismatch). "
+                             "No-op for non-tiling processors. hf_direct only.")
+    parser.add_argument("--extra_trainable_path", type=str, default=None,
+                        help="Path to extra_trainable.pt holding non-LoRA "
+                             "trainable params (e.g. a fully-tuned vision "
+                             "tower from a vtower run). Loaded with "
+                             "strict=False after the LoRA merge. If omitted, "
+                             "auto-detected as extra_trainable.pt next to "
+                             "--adapter_path. hf_direct loader only.")
     parser.add_argument("--loader", type=str, default=None,
                         choices=["mlx_vlm", "hf_bf16", "hf_gptq", "hf_gptq_hybrid"],
                         help="Model loader backend. Use mlx_vlm for quantized MLX models on Mac")
