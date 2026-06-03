@@ -44,7 +44,9 @@ def test_six_configs_image_only_default_on() -> None:
         # effective batch preserved at 16 for bake-off comparability
         assert (cfg.training.per_device_train_batch_size
                 * cfg.training.gradient_accumulation_steps) == 16
-        assert cfg.training.save_steps == 2000
+        # save every 1k step, keep-all (save_total_limit null -> None)
+        assert cfg.training.save_steps == 1000
+        assert cfg.training.save_total_limit is None
 
 
 def test_is_vision_param_markers() -> None:
