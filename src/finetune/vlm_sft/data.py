@@ -33,6 +33,18 @@ def load_jsonl(path: str | Path) -> List[Dict[str, Any]]:
     return records
 
 
+def filter_image_only(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep only image-bearing (camera=on) records.
+
+    A record is image-bearing iff it carries a truthy ``image`` path — the
+    same predicate ``build_vision_messages`` uses for its camera-state
+    dispatch. Text-only (camera=off) records neither exercise the vision
+    tower nor belong in a vision-tower bake-off's loss, so the pipeline
+    drops them by default.
+    """
+    return [r for r in records if r.get("image")]
+
+
 def _load_images(messages: List[Dict[str, Any]]):
     """Replace image content blocks' path strings with loaded PIL images.
 

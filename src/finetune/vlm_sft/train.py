@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
 
 def _build_eval_dataset(cfg, max_val_samples):
     """Concatenate the per-bucket val files into one eval set (val loss)."""
-    from vlm_sft.data import VlmSftDataset, load_jsonl
+    from vlm_sft.data import VlmSftDataset, filter_image_only, load_jsonl
 
     records = []
     if cfg.data.val_files:
@@ -46,6 +46,11 @@ def _build_eval_dataset(cfg, max_val_samples):
                 records.extend(load_jsonl(path))
     elif cfg.data.val_file and Path(cfg.data.val_file).exists():
         records.extend(load_jsonl(cfg.data.val_file))
+    if cfg.data.image_only:
+        n0 = len(records)
+        records = filter_image_only(records)
+        log.info("image_only: eval %d -> %d (dropped %d camera=off)",
+                 n0, len(records), n0 - len(records))
     if not records:
         return None
     if max_val_samples:
@@ -99,6 +104,11 @@ def main() -> None:
 
     # --- data ------------------------------------------------------------
     train_records = data_mod.load_jsonl(cfg.data.train_file)
+    if cfg.data.image_only:
+        n0 = len(train_records)
+        train_records = data_mod.filter_image_only(train_records)
+        log.info("image_only: train %d -> %d (dropped %d camera=off)",
+                 n0, len(train_records), n0 - len(train_records))
     if cfg.data.max_train_samples:
         train_records = train_records[: cfg.data.max_train_samples]
     train_ds = data_mod.VlmSftDataset(train_records)
@@ -131,9 +141,14 @@ def main() -> None:
         lr_scheduler_type=cfg.training.lr_scheduler_type,
         seed=cfg.training.seed,
         save_steps=cfg.training.save_steps,
-        # Bound disk: full-model (vision-only) checkpoints are ~7.5 GB each.
-        # CLI override wins; else config; else default 2.
-        save_total_limit=args.save_total_limit or cfg.training.save_total_limit or 2,
+        # Checkpoint retention. CLI override wins; else config value; else
+        # None = keep every checkpoint (so the full 2k-interval history is
+        # available for picking the best step). null in YAML => keep all.
+        save_total_limit=(
+            args.save_total_limit
+            if args.save_total_limit is not None
+            else cfg.training.save_total_limit
+        ),
         report_to=cfg.training.report_to,
         dataloader_num_workers=cfg.training.dataloader_num_workers,
         dataloader_pin_memory=cfg.training.dataloader_pin_memory,

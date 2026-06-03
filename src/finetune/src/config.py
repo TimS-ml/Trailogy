@@ -226,6 +226,12 @@ class DataConfig:
     # two-state contract it was trained with regardless of question
     # topic. See ``build_vision_messages`` for the dispatch.
     prompt_prefixes: Optional[Dict[str, str]] = None
+    # Keep only image-bearing (camera=on) records; drop text-only
+    # (camera=off) ones. Default True so the camera=off modality does not
+    # exist unless a config explicitly opts back in. Honored by the
+    # vision-tower SFT pipeline (``vlm_sft``); the unsloth Gemma pipeline
+    # ignores this field and keeps its text-only anti-forgetting mix.
+    image_only: bool = True
 
 
 @dataclass

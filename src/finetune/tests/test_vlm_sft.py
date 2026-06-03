@@ -10,9 +10,41 @@ from pathlib import Path
 
 import pytest
 
+from vlm_sft.data import filter_image_only
 from vlm_sft.modeling import is_vision_param, split_param_groups
 
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "configs" / "local_sweep"
+
+
+def test_filter_image_only_drops_camera_off() -> None:
+    recs = [
+        {"image": "/a.jpg", "conversations": []},
+        {"image": None, "conversations": []},     # camera=off (text-only)
+        {"conversations": []},                      # camera=off (no image key)
+        {"image": "/b.jpg", "conversations": []},
+        {"image": "", "conversations": []},        # empty path == camera=off
+    ]
+    kept = filter_image_only(recs)
+    assert [r["image"] for r in kept] == ["/a.jpg", "/b.jpg"]
+
+
+def test_six_configs_image_only_default_on() -> None:
+    from src.config import load_config
+
+    for name in [
+        "vtower-nokl-local-30k-v3-internvl.yaml",
+        "r64-a64-nokl-vtower-local-30k-v3-internvl.yaml",
+        "r64-a64-nokl-local-30k-v3-internvl.yaml",
+        "vtower-nokl-local-30k-v3-qwen.yaml",
+        "r64-a64-nokl-vtower-local-30k-v3-qwen.yaml",
+        "r64-a64-nokl-local-30k-v3-qwen.yaml",
+    ]:
+        cfg = load_config(CONFIG_DIR / name)
+        assert cfg.data.image_only is True
+        # effective batch preserved at 16 for bake-off comparability
+        assert (cfg.training.per_device_train_batch_size
+                * cfg.training.gradient_accumulation_steps) == 16
+        assert cfg.training.save_steps == 2000
 
 
 def test_is_vision_param_markers() -> None:
