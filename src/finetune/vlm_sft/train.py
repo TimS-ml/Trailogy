@@ -31,6 +31,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-train-samples", dest="max_train_samples", type=int, default=None)
     p.add_argument("--max-val-samples", dest="max_val_samples", type=int, default=None)
     p.add_argument("--save-total-limit", dest="save_total_limit", type=int, default=None)
+    # Only persist checkpoints at/after this step (skip early-training churn).
+    p.add_argument("--save-min-step", dest="save_min_step", type=int, default=None)
     p.add_argument("--report-to", dest="report_to", type=str, default=None)
     return p.parse_args()
 
@@ -181,6 +183,11 @@ def main() -> None:
         train_dataset=train_ds,
         eval_dataset=eval_ds,
         data_collator=collator,
+        # Persist the processor inside every checkpoint dir so each ckpt is
+        # self-contained and directly loadable for downstream eval — needed
+        # for vision-only (full-model) checkpoints, which otherwise carry no
+        # tokenizer/processor and fail AutoProcessor.from_pretrained(<ckpt>).
+        processing_class=processor,
     )
 
     # Save/restore vision-tower params trained alongside a LoRA adapter. PEFT's
@@ -201,6 +208,26 @@ def main() -> None:
             missing = model.load_state_dict(torch.load(extra_path, map_location="cpu"), strict=False)
             log.info("restored %d extra (vision) tensors from %s",
                      len(torch.load(extra_path, map_location="cpu")), extra_path)
+
+    # Suppress checkpoint saves before save_min_step (skip early-training churn;
+    # only persist the mature checkpoints worth downstream eval). CLI wins.
+    save_min_step = (args.save_min_step if args.save_min_step is not None
+                     else cfg.training.save_min_step)
+    if save_min_step and save_min_step > 0:
+        from transformers import TrainerCallback
+
+        class _SaveAfter(TrainerCallback):
+            def __init__(self, min_step):
+                self.min_step = min_step
+
+            def on_step_end(self, args, state, control, **kw):
+                if control.should_save and state.global_step < self.min_step:
+                    control.should_save = False
+                return control
+
+        trainer.add_callback(_SaveAfter(save_min_step))
+        log.info("save_min_step=%d (skip checkpoint saves before this step)",
+                 save_min_step)
 
     # Soft stop at a step count below the scheduler horizon (for staged 12k→30k).
     if args.stop_at_steps is not None:

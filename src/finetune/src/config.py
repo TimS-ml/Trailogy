@@ -139,6 +139,13 @@ class TrainingConfig:
     warmup_ratio: Optional[float] = None
     seed: int = 3407
     save_steps: int = 200
+    # Suppress checkpoint saves before this global step. 0 = save from the
+    # start (HF default). Use it to skip the early-training churn and only
+    # persist the mature checkpoints worth downstream eval, e.g.
+    # save_steps=2000 + save_min_step=10000 → ckpts at 10k,12k,…,max_steps.
+    # Honored by the vlm_sft trainer via a callback; the unsloth pipeline
+    # ignores it.
+    save_min_step: int = 0
     # Cap how many checkpoint dirs the trainer keeps under output_dir.
     # Each LoRA-r256 checkpoint is hundreds of MB; a long run with
     # save_steps=200 will fill disk without this. None = unlimited (HF

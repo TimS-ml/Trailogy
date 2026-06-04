@@ -44,8 +44,9 @@ def test_six_configs_image_only_default_on() -> None:
         # effective batch preserved at 16 for bake-off comparability
         assert (cfg.training.per_device_train_batch_size
                 * cfg.training.gradient_accumulation_steps) == 16
-        # save every 1k step, keep-all (save_total_limit null -> None)
-        assert cfg.training.save_steps == 1000
+        # save every 2k from step 10k (the eval-worthy ckpts), keep-all
+        assert cfg.training.save_steps == 2000
+        assert cfg.training.save_min_step == 10000
         assert cfg.training.save_total_limit is None
 
 
