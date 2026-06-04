@@ -1,0 +1,12 @@
+# VLM vision-tower SFT sweep queue — CLOUD (runpod) copy.
+# Same 6 runs as configs_sweep.txt but pointing at configs/cloud_sweep/.
+# Use this on the runpod pod (run-sweep.sh defaults to it); the local
+# box keeps configs_sweep.txt -> configs/local_sweep/.
+# 6 runs: {InternVL3.5-4B-HF, Qwen3.5-4B} x {vision-only, vision+LoRA r64, LoRA r64-only}.
+# InternVL first (faster: single 448 tile), then Qwen (image tokens capped).
+configs/cloud_sweep/vtower-nokl-local-30k-v3-internvl.yaml
+configs/cloud_sweep/r64-a64-nokl-vtower-local-30k-v3-internvl.yaml
+configs/cloud_sweep/r64-a64-nokl-local-30k-v3-internvl.yaml
+configs/cloud_sweep/vtower-nokl-local-30k-v3-qwen.yaml
+configs/cloud_sweep/r64-a64-nokl-vtower-local-30k-v3-qwen.yaml
+configs/cloud_sweep/r64-a64-nokl-local-30k-v3-qwen.yaml
